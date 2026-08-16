@@ -1,0 +1,55 @@
+name: Daily AI Article
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Collect info
+        run: python scripts/collect.py
+
+      - name: Write article with AI
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+        run: python scripts/write.py
+
+      - name: Save draft to WeChat
+        if: hashFiles('output/article.json') != ''
+        run: |
+          node scripts/wechat-publish.js \
+            --server "$WX_SERVER" \
+            --secret "$WX_SHARED_SECRET" \
+            --appid "$WX_APPID" \
+            --appsecret "$WX_APPSECRET" \
+            --file output/article.json
+        env:
+          WX_SERVER: ${{ secrets.WX_SERVER }}
+          WX_SHARED_SECRET: ${{ secrets.WX_SHARED_SECRET }}
+          WX_APPID: ${{ secrets.WX_APPID }}
+          WX_APPSECRET: ${{ secrets.WX_APPSECRET }}
+
+      - name: Commit article
+        run: |
+          git config user.name "daily-bot"
+          git config user.email "daily-bot@users.noreply.github.com"
+          git add output/
+          git commit -m "daily article $(date +%F)" || echo "nothing to commit"
+          git push
