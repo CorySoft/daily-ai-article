@@ -3,6 +3,8 @@ __pycache__/
 
 # 生成物中仅保留当日文章 .md，忽略临时/敏感文件
 output/collected.json
+output/plan.json
+output/report.json
 output/article.json
 
 # 可能的本地微信客户端配置（含凭证，勿提交）

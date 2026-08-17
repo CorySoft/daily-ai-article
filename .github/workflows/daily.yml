@@ -21,19 +21,32 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Collect info
-        run: python scripts/collect.py
+      - name: S1 Collect (search)
+        run: python scripts/search.py
+        env:
+          SEARCH_API_KEY: ${{ secrets.SEARCH_API_KEY }}
+          SEARCH_TOPICS: ${{ vars.SEARCH_TOPICS }}
 
-      - name: Write article with AI
+      - name: S2 Plan
+        run: python scripts/plan.py
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+
+      - name: S3 Write
+        run: python scripts/write.py
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ vars.LLM_MODEL }}
           LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           ARTICLE_AUTHOR: ${{ vars.ARTICLE_AUTHOR }}
           ARTICLE_DIGEST: ${{ vars.ARTICLE_DIGEST }}
-        run: python scripts/write.py
 
-      - name: Save draft to WeChat
+      - name: S7 Verify report
+        run: python scripts/report.py
+
+      - name: S6 Save draft to WeChat
         if: hashFiles('output/article.json') != ''
         run: |
           node scripts/wechat-publish.js \
