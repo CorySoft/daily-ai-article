@@ -13,29 +13,35 @@ GitHub Actions cron(每天 8:00)
 
 ## 配置
 1. 把项目推到 **public 仓库**（Actions 不限量）
-2. 在仓库 `Settings → Secrets → Actions` 添加：
-   - 生成文章：`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`
-   - 发布到微信：`WX_SERVER`、`WX_SHARED_SECRET`、`WX_APPID`、`WX_APPSECRET`
-   - 可选：`ARTICLE_AUTHOR`、`ARTICLE_DIGEST`（作者、摘要）
+2. 在仓库 `Settings → Secrets and variables → Actions` 添加：
+
+### 🔒 Secrets（保密，加密存储，显示为 ***）
+- `LLM_API_KEY`：硅基流动 API Key
+- `WX_SERVER`：wechat-publisher 中转地址（如 `https://your-host`）
+- `WX_SHARED_SECRET`：与 config.php 的 shared_secret 一致
+- `WX_APPID`：公众号 AppID
+- `WX_APPSECRET`：公众号 AppSecret
+
+### 🔓 Variables（公开配置，明文可见）
+- `LLM_BASE_URL`：`https://api.siliconflow.cn/v1`
+- `LLM_MODEL`：`THUDM/GLM-4-9B-Chat`（免费中文写作）
+- `ARTICLE_AUTHOR`：作者名，如 `小编`
+- `ARTICLE_DIGEST`：摘要（可空）
 
 ### 申请 SiliconFlow Key
 1. 打开 https://cloud.siliconflow.cn 注册登录（国内直连）
 2. 进入「API 密钥」页面 → 创建 API 密钥 → 复制保存
-3. 在「模型广场」挑一个模型，复制其完整模型名作为 `LLM_MODEL`
-   - 免费/低价推荐：`deepseek-ai/DeepSeek-V3`（性价比高）、`Qwen/Qwen3-8B`（免费）
-4. 用生成的 key 填 `LLM_API_KEY` 即可
+3. 用生成的 key 填 `LLM_API_KEY`（Secret）
+4. 在「模型广场」找免费模型 `THUDM/GLM-4-9B-Chat` 或 `Qwen/Qwen2.5-7B-Instruct`，填 `LLM_MODEL`（Variable）
 
 ### 微信发布配置
-文章会通过你的 `wechat-publisher` 中转服务存到草稿箱，需要在 Actions 加 secret：
-- `WX_SERVER`：你的中转服务地址，如 `https://your-host`
-- `WX_SHARED_SECRET`：与 wechat-publisher `config.php` 的 `shared_secret` 一致
-- `WX_APPID` / `WX_APPSECRET`：公众号凭证（client 脚本会加密传输，服务器不落盘）
+文章会通过你的 `wechat-publisher` 中转服务存到草稿箱，其中 `WX_*` 四个值填到 **Secrets**。
 
 > 草稿箱接口不要求公众号认证，未认证账号也能用。要正式群发/发布需认证。
 > IP 白名单加你的 PHP 服务器 IP 即可（微信请求由你的固定服务器发出，GitHub 动态 IP 不影响）。
 
 ### 换其他服务（可选）
-均为 OpenAI 兼容接口，改 `LLM_BASE_URL` + `LLM_MODEL` 即可：
+均为 OpenAI 兼容接口，改 `LLM_BASE_URL` + `LLM_MODEL` 两个 **Variables** 即可：
 - DeepSeek：`https://api.deepseek.com/v1`
 - Groq：`https://api.groq.com/openai/v1`
 - Google Gemini：官方 API

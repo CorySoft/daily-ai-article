@@ -27,8 +27,10 @@ jobs:
       - name: Write article with AI
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          LLM_MODEL: ${{ secrets.LLM_MODEL }}
-          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          ARTICLE_AUTHOR: ${{ vars.ARTICLE_AUTHOR }}
+          ARTICLE_DIGEST: ${{ vars.ARTICLE_DIGEST }}
         run: python scripts/write.py
 
       - name: Save draft to WeChat
