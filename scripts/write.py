@@ -61,7 +61,7 @@ def main():
         plan=json.dumps(plan, ensure_ascii=False),
         collected=json.dumps(collected, ensure_ascii=False)[:8000],
     )
-    article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=1900).strip()
+    article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=4096).strip()
     title, body = split_title(article)
     with open(f"output/{date.today()}.md", "w", encoding="utf-8") as f:
         f.write(article)

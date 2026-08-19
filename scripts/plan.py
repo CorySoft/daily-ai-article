@@ -30,7 +30,7 @@ def main():
     with open("output/collected.json", encoding="utf-8") as f:
         collected = json.load(f)
     prompt = PLAN_PROMPT.format(collected=json.dumps(collected, ensure_ascii=False)[:6000])
-    plan = llm.chat_json([{"role": "user", "content": prompt}], temperature=0.5, max_tokens=4096)
+    plan = llm.chat_json([{"role": "user", "content": prompt}], temperature=0.5, max_tokens=8192)
     with open("output/plan.json", "w", encoding="utf-8") as f:
         json.dump(plan, f, ensure_ascii=False, indent=2)
     print(f"plan written: output/plan.json | topic: {plan.get('topic')}")

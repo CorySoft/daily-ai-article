@@ -62,7 +62,7 @@ def _repair_json(text):
     text = re.sub(r'(?<=")\n(?=")', '\\n', text)
     return text
 
-def chat_json(messages, temperature=0.7, max_tokens=4096, retries=3):
+def chat_json(messages, temperature=0.7, max_tokens=8192, retries=3):
     for attempt in range(retries):
         text = chat(messages, temperature, max_tokens)
         text = _clean_content(text)
