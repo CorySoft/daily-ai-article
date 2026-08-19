@@ -8,7 +8,29 @@ import os
 import textwrap
 from PIL import Image, ImageDraw, ImageFont
 
-FONT = "/system/fonts/NotoSansCJK-Regular.ttc"
+FONT_PATHS = [
+    "/system/fonts/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+]
+
+def _find_font():
+    import glob
+    for p in FONT_PATHS:
+        if os.path.exists(p):
+            return p
+    # Fallback: search for any NotoSansCJK or CJK font
+    for pattern in ["/usr/share/fonts/**/NotoSansCJK*.ttc",
+                    "/usr/share/fonts/**/NotoSansCJK*.otf",
+                    "/usr/share/fonts/**/*CJK*.ttf"]:
+        matches = glob.glob(pattern, recursive=True)
+        if matches:
+            return matches[0]
+    return None
+
+FONT = _find_font()
 
 BG = "#0F1322"
 PANEL = "#1A2138"
@@ -18,7 +40,12 @@ TXT = "#E8EAF5"
 SUB = "#8A93B5"
 
 def font(sz, bold=False):
-    return ImageFont.truetype(FONT, sz, index=1 if bold else 0)
+    if FONT:
+        try:
+            return ImageFont.truetype(FONT, sz, index=1 if bold else 0)
+        except Exception:
+            pass
+    return ImageFont.load_default()
 
 def grid(d, w, h):
     for x in range(0, w, 26):
