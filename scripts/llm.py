@@ -45,19 +45,41 @@ def chat(messages, temperature=0.7, max_tokens=3000, retries=3):
                 time.sleep(wait)
     raise last_err
 
+def _clean_content(text):
+    """Strip thinking tags and extra whitespace from model output."""
+    import re
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL)
+    return text.strip()
+
+def _repair_json(text):
+    """Try to fix common JSON issues."""
+    import re
+    # Remove trailing commas before } or ]
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+    # Fix unescaped newlines in string values
+    text = re.sub(r'(?<=")\n(?=")', '\\n', text)
+    return text
+
 def chat_json(messages, temperature=0.7, max_tokens=4096, retries=3):
     for attempt in range(retries):
         text = chat(messages, temperature, max_tokens)
+        text = _clean_content(text)
         start, end = text.find("{"), text.rfind("}")
         if start == -1 or end == -1:
             if attempt < retries - 1:
                 print(f"  模型未返回 JSON (attempt {attempt+1}/{retries}), 重试...")
                 continue
             raise ValueError(f"模型未返回 JSON: {text[:500]}")
+        snippet = text[start:end + 1]
         try:
-            return json.loads(text[start:end + 1])
+            return json.loads(snippet)
         except json.JSONDecodeError:
-            if attempt < retries - 1:
-                print(f"  JSON 解析失败 (attempt {attempt+1}/{retries}), 重试...")
-                continue
-            raise ValueError(f"JSON 解析失败: {text[start:start+600]}")
+            repaired = _repair_json(snippet)
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                if attempt < retries - 1:
+                    print(f"  JSON 解析失败 (attempt {attempt+1}/{retries}), 重试...")
+                    continue
+                raise ValueError(f"JSON 解析失败: {repaired[:600]}")
