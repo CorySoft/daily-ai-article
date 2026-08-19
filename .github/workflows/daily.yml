@@ -54,12 +54,14 @@ jobs:
             --secret "$WX_SHARED_SECRET" \
             --appid "$WX_APPID" \
             --appsecret "$WX_APPSECRET" \
+            --unlock-password "$WX_UNLOCK_PASSWORD" \
             --file output/article.json
         env:
           WX_SERVER: ${{ secrets.WX_SERVER }}
           WX_SHARED_SECRET: ${{ secrets.WX_SHARED_SECRET }}
           WX_APPID: ${{ secrets.WX_APPID }}
           WX_APPSECRET: ${{ secrets.WX_APPSECRET }}
+          WX_UNLOCK_PASSWORD: ${{ secrets.WX_UNLOCK_PASSWORD }}
 
       - name: Commit article
         run: |

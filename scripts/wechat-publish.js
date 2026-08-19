@@ -13,6 +13,11 @@
 //   --appsecret <str>  微信公众号 AppSecret
 //   --file <path>      JSON 请求体文件，如 {"draft":true,"articles":[...]}
 //   --endpoint <path>  API 路径，默认 /publish
+//   --method <verb>    HTTP 方法（默认 POST，GET 路由用 --method GET）
+//   --unlock-password <str>  阿贝云(abeiyun)调试域名门禁密码（config.unlock_password）
+//
+// 阿贝云调试域名自动解锁：若服务器返回门禁页（系统域名_网站调试域名），
+// 且配置了 unlock_password，则自动调用解锁接口获取令牌并写 cookie 后重试一次。
 //
 // 请求体也可从 stdin 传入：echo '{"count":5}' | node client/wechat-publish.js --endpoint /draft/list
 //
@@ -26,6 +31,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
+const { spawn } = require('child_process');
 
 // ---- 参数解析 ----
 const opts = {};
@@ -43,9 +49,14 @@ for (let i = 0; i < argv.length; i++) {
   }
 }
 
-// ---- 可选的本机配置 ----
+// ---- 可选的本机配置（按优先级：--config > 本地 client_config.json > 全局配置）----
 let config = {};
-const configPath = opts.config || path.join(__dirname, 'client_config.json');
+const GLOBAL_CONFIG = path.join(
+  process.env.HOME || process.env.USERPROFILE || '~',
+  '.config', 'wechat-publisher', 'client_config.json'
+);
+const localConfig = path.join(__dirname, 'client_config.json');
+const configPath = opts.config || (fs.existsSync(localConfig) ? localConfig : GLOBAL_CONFIG);
 if (fs.existsSync(configPath)) {
   try {
     config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -60,6 +71,8 @@ const secret = opts.secret || config.shared_secret || '';
 const appId = opts.appid || config.app_id || '';
 const appSecret = opts.appsecret || config.app_secret || '';
 const endpoint = opts.endpoint || '/publish';
+const httpMethod = (opts.method || 'POST').toUpperCase();
+const unlockPassword = opts['unlock-password'] || config.unlock_password || '';
 
 for (const [name, val] of [['server', server], ['secret', secret], ['appid', appId], ['appsecret', appSecret]]) {
   if (!val) {
@@ -81,8 +94,8 @@ if (opts.file) {
   body = fs.readFileSync(0, 'utf8'); // stdin
 }
 body = body.trimEnd();
-if (!body || !body.endsWith('}')) {
-  console.error('请求体必须是 JSON 对象（--file <path> 或从 stdin 传入）');
+if (!body) {
+  console.error('请求体为空（--file <path> 或从 stdin 传入 JSON）');
   process.exit(1);
 }
 
@@ -95,36 +108,115 @@ const ct = Buffer.concat([cipher.update(credJson, 'utf8'), cipher.final()]).toSt
 const mac = crypto.createHmac('sha256', keyHex).update(iv.toString('hex') + ct).digest('hex');
 const credPayload = `v1:${iv.toString('hex')}:${mac}:${ct}`;
 
-// ---- 注入 credentials 字段（对象末尾追加）----
-body = body.slice(0, -1) + `,"credentials":"${credPayload}"}`;
+// ---- 注入 credentials 字段（安全地解析 JSON 并重新序列化）----
+let parsed;
+try {
+  parsed = JSON.parse(body);
+} catch (e) {
+  console.error(`JSON 解析失败: ${e.message}`);
+  process.exit(1);
+}
+parsed.credentials = credPayload;
+body = JSON.stringify(parsed);
 
 // ---- 发送 ----
 const url = new URL(server + endpoint);
 const isHttps = url.protocol === 'https:';
 const transport = isHttps ? https : http;
 
-const reqOpts = {
-  hostname: url.hostname,
-  path: url.pathname + url.search,
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Shared-Secret': secret,
-    'Content-Length': Buffer.byteLength(body),
-  },
-};
-if (url.port) {
-  reqOpts.port = Number(url.port);
+// 阿贝云调试域名解锁中心接口
+const UNLOCK_API = 'https://api.abeiyun.com/www/break.php';
+
+// 从 XML 响应中提取解锁令牌（errMsg，即调试域名本身），失败返回 null
+function parseToken(out) {
+  const m = String(out).match(/<errMsg>([^<]*)<\/errMsg>/);
+  return m ? m[1].trim() : null;
 }
 
-const req = transport.request(reqOpts, (res) => {
-  let out = '';
-  res.on('data', (c) => { out += c; });
-  res.on('end', () => { console.log(out); });
-});
-req.on('error', (e) => {
+// 调用阿贝云解锁接口，返回令牌，失败返回 null。
+// 优先用 node https（跨平台、无依赖）；个别环境 node 到阿贝云 TLS/POST 会被重置，
+// 此时回退到 curl 兜底，保证任意机器都能自动解锁。
+function unlockDebugDomain(hostname) {
+  return new Promise((resolve) => {
+    const u = new URL(UNLOCK_API);
+    const path = `/www/break.php?cmd=visit_sysdomain&password=${encodeURIComponent(unlockPassword)}`;
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': `http://${hostname}/`,
+    };
+    const r = https.request({ hostname: u.hostname, path, method: 'POST', headers }, (res) => {
+      let out = '';
+      res.on('data', (c) => { out += c; });
+      res.on('end', () => resolve(parseToken(out)));
+    });
+    r.on('error', () => resolve(null));
+    r.setTimeout(10000, () => { r.destroy(); });
+    r.write('x=1');
+    r.end();
+  }).then((token) => {
+    if (token) return token;
+    // curl 兜底
+    return new Promise((resolve) => {
+      const child = spawn('curl', [
+        '-s', '-m', '15', '-X', 'POST', `${UNLOCK_API}?cmd=visit_sysdomain&password=${encodeURIComponent(unlockPassword)}`,
+        '-H', 'Content-Type: application/x-www-form-urlencoded',
+        '-H', `Referer: http://${hostname}/`,
+        '-d', 'x=1',
+      ]);
+      let out = '';
+      child.stdout.on('data', (c) => { out += c; });
+      child.stderr.on('data', () => {});
+      child.on('close', () => resolve(parseToken(out)));
+      child.on('error', () => resolve(null));
+    });
+  });
+}
+
+// 发送一次请求，返回 { statusCode, body }，网络错误 reject
+function sendRequest(cookieHeader) {
+  return new Promise((resolve, reject) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Shared-Secret': secret,
+      'Content-Length': Buffer.byteLength(body),
+    };
+    if (cookieHeader) {
+      headers['Cookie'] = cookieHeader;
+    }
+    const reqOpts = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: httpMethod,
+      headers,
+    };
+    if (url.port) {
+      reqOpts.port = Number(url.port);
+    }
+    const req = transport.request(reqOpts, (res) => {
+      let out = '';
+      res.on('data', (c) => { out += c; });
+      res.on('end', () => { resolve({ statusCode: res.statusCode, body: out }); });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+(async () => {
+  let cookie = '';
+
+  // 阿贝云调试域名：若配置了门禁密码，请求前先自动解锁拿 cookie，跳过门禁
+  if (unlockPassword && (url.hostname.endsWith('abeiyun.cn') || url.hostname.endsWith('host109.abeiyun.cn'))) {
+    const token = await unlockDebugDomain(url.hostname);
+    if (token) {
+      cookie = 'zhujiwusysdomain=' + encodeURIComponent(token);
+    }
+  }
+
+  const resp = await sendRequest(cookie);
+  console.log(resp.body);
+})().catch((e) => {
   console.error(`请求失败: ${e.message}`);
   process.exit(1);
 });
-req.write(body);
-req.end();
