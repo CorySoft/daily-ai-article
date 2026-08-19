@@ -29,6 +29,7 @@ def chat(messages, temperature=0.7, max_tokens=3000, retries=3):
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {cfg['api_key']}",
+                    "User-Agent": "Mozilla/5.0 DailyAI/1.0",
                 },
             )
             with urllib.request.urlopen(req, timeout=120) as r:
