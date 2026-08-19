@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: S1 Collect (search)
+      - name: S1 Collect
         run: python scripts/search.py
         env:
           SEARCH_API_KEY: ${{ secrets.SEARCH_API_KEY }}
@@ -51,30 +51,23 @@ jobs:
       - name: S4 Generate cover
         run: python scripts/gen_cover.py
 
-      - name: Commit cover for thumb_url
+      - name: S5 Inject thumb_url
         run: |
-          git config user.name "daily-bot"
-          git config user.email "daily-bot@users.noreply.github.com"
-          git add output/cover.png
-          git diff --cached --quiet && echo "no cover changes" || git commit -m "cover $(date +%F)" && git push
-
-      - name: Add thumb_url to article
-        run: python -c "
+          python -c "
           import json, os
-          url = os.environ['COVER_URL']
           with open('output/article.json') as f: d = json.load(f)
-          d['articles'][0]['thumb_url'] = url
+          d['articles'][0]['thumb_url'] = os.environ['COVER_URL']
           d['articles'][0]['show_cover_pic'] = 1
           with open('output/article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
-          print('thumb_url set:', url)
+          print('thumb_url set:', os.environ['COVER_URL'])
           "
         env:
           COVER_URL: "https://raw.githubusercontent.com/${{ github.repository }}/main/output/cover.png"
 
-      - name: S7 Verify report
+      - name: S6 Verify
         run: python scripts/report.py
 
-      - name: S6 Save draft to WeChat
+      - name: S7 Save draft to WeChat
         if: hashFiles('output/article.json') != ''
         run: |
           node scripts/wechat-publish.js \

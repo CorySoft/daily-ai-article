@@ -5,6 +5,7 @@ Follows wx_article safe-zone rules: key content within x∈[258,642].
 """
 import json
 import os
+import sys
 import textwrap
 from PIL import Image, ImageDraw, ImageFont
 
@@ -21,7 +22,6 @@ def _find_font():
     for p in FONT_PATHS:
         if os.path.exists(p):
             return p
-    # Fallback: search for any NotoSansCJK or CJK font
     for pattern in ["/usr/share/fonts/**/NotoSansCJK*.ttc",
                     "/usr/share/fonts/**/NotoSansCJK*.otf",
                     "/usr/share/fonts/**/*CJK*.ttf"]:
@@ -31,6 +31,10 @@ def _find_font():
     return None
 
 FONT = _find_font()
+
+if FONT is None:
+    print("WARNING: No CJK font found. Chinese text on cover will be garbled.", file=sys.stderr)
+    print("  Install: sudo apt-get install -y fonts-noto-cjk", file=sys.stderr)
 
 BG = "#0F1322"
 PANEL = "#1A2138"
@@ -64,6 +68,10 @@ def main():
     plan_path = os.path.join(os.path.dirname(__file__), "..", "output", "plan.json")
     out_dir = os.path.join(os.path.dirname(__file__), "..", "output")
 
+    if not os.path.exists(plan_path):
+        print(f"ERROR: {plan_path} not found, skipping cover generation", file=sys.stderr)
+        sys.exit(1)
+
     with open(plan_path, encoding="utf-8") as f:
         plan = json.load(f)
 
@@ -72,19 +80,16 @@ def main():
 
     os.makedirs(out_dir, exist_ok=True)
 
-    # --- Cover 900x383 (2.35:1) ---
     w, h = 900, 383
     img = Image.new("RGB", (w, h), BG)
     d = ImageDraw.Draw(img)
     grid(d, w, h)
 
-    # Decorative ellipses (safe to crop)
     d.ellipse([40, 90, 210, 260], outline=PANEL, width=2)
     d.ellipse([690, 90, 860, 260], outline=PANEL, width=2)
 
     cx = 450
 
-    # Tag pill
     tag_text = "AI 每日精选"
     tag_f = font(16, True)
     bbox = d.textbbox((0, 0), tag_text, font=tag_f)
@@ -92,22 +97,18 @@ def main():
     d.rounded_rectangle([cx - tw // 2, 16, cx + tw // 2, 56], radius=20, fill=BLUE)
     center_text(d, cx, 36, tag_text, tag_f, TXT)
 
-    # Title (wrapped)
     title_lines = wrap_title(topic, max_chars=15)
     title_f = font(42, True)
     y_start = 80
     for i, line in enumerate(title_lines):
         center_text(d, cx, y_start + i * 56, line, title_f, TXT)
 
-    # Divider
     div_y = y_start + len(title_lines) * 56 + 10
     d.line([(cx - 150, div_y), (cx + 150, div_y)], fill=CYAN, width=3)
 
-    # Subtitle (angle, truncated)
     sub_text = angle[:36] + "..." if len(angle) > 36 else angle
     center_text(d, cx, div_y + 40, sub_text, font(20, True), CYAN)
 
-    # Bottom tagline
     center_text(d, cx, 348, "AI 深度洞察 · 每日精选", font(16, True), SUB)
 
     cover_path = os.path.join(out_dir, "cover.png")

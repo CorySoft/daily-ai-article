@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import re
@@ -37,22 +38,70 @@ def split_title(article):
         return lines[0].lstrip().lstrip("#").strip(), "\n".join(lines[1:]).strip()
     return date.today().isoformat(), article
 
+def _inline_md(text):
+    """Convert inline markdown (bold, italic, code, links) to HTML."""
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+    text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+    text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', text)
+    return text
+
 def markdown_to_html(md):
     html_lines = []
+    in_list = False
     for line in md.splitlines():
         line = line.rstrip()
         if not line.strip():
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
             continue
+        # Headings
         m = re.match(r"^(#{1,4})\s+(.*)", line)
         if m:
-            html_lines.append(f"<h{len(m.group(1))}>{m.group(2)}</h{len(m.group(1))}>")
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            level = len(m.group(1))
+            html_lines.append(f"<h{level}>{_inline_md(m.group(2))}</h{level}>")
+        # Blockquote
+        elif line.strip().startswith(">"):
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<blockquote>{_inline_md(line.strip()[1:].strip())}</blockquote>")
+        # Unordered list
         elif re.match(r"^[-*+]\s+", line):
-            html_lines.append(f"<p>{line.strip()[2:].strip()}</p>")
+            if not in_list:
+                html_lines.append("<ul>")
+                in_list = True
+            html_lines.append(f"<li>{_inline_md(line.strip()[2:].strip())}</li>")
+        # Ordered list
+        elif re.match(r"^\d+\.\s+", line):
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<p>{_inline_md(line.strip())}</p>")
+        # Horizontal rule
+        elif re.match(r"^[-*_]{3,}\s*$", line):
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append("<hr>")
         else:
-            html_lines.append(f"<p>{line}</p>")
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<p>{_inline_md(line)}</p>")
+    if in_list:
+        html_lines.append("</ul>")
     return "".join(html_lines)
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--thumb-url", help="Cover image URL for WeChat thumb")
+    args = parser.parse_args()
+
     with open("output/plan.json", encoding="utf-8") as f:
         plan = json.load(f)
     with open("output/collected.json", encoding="utf-8") as f:
@@ -66,14 +115,19 @@ def main():
     with open(f"output/{date.today()}.md", "w", encoding="utf-8") as f:
         f.write(article)
 
+    articles = {
+        "title": title,
+        "author": os.environ.get("ARTICLE_AUTHOR", "CorySoft"),
+        "digest": os.environ.get("ARTICLE_DIGEST", ""),
+        "content": markdown_to_html(body),
+    }
+    if args.thumb_url:
+        articles["thumb_url"] = args.thumb_url
+        articles["show_cover_pic"] = 1
+
     payload = {
         "draft": True,
-        "articles": [{
-            "title": title,
-            "author": os.environ.get("ARTICLE_AUTHOR", "CorySoft"),
-            "digest": os.environ.get("ARTICLE_DIGEST", ""),
-            "content": markdown_to_html(body),
-        }],
+        "articles": [articles],
     }
     with open("output/article.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
