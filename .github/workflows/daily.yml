@@ -68,7 +68,6 @@ jobs:
 
       - name: S6 Fill image URLs + thumb
         run: |
-          echo "CDN_BASE_URL=https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/" >> $GITHUB_ENV
           COVER_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
           python -c "
           import json, os
@@ -77,7 +76,7 @@ jobs:
           d['articles'][0]['show_cover_pic'] = 1
           with open('output/article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
           "
-          python scripts/fill_article.py
+          CDN_BASE_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/" python scripts/fill_article.py
         env:
           COVER_URL: "https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
 
