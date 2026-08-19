@@ -20,7 +20,7 @@ jobs:
       - name: Install Pillow + CJK font
         run: |
           pip install Pillow
-          sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+          sudo timeout 120 apt-get update && sudo timeout 60 apt-get install -y fonts-noto-cjk || echo "WARNING: CJK font install skipped (non-blocking, only needed for PIL fallback)"
 
       - uses: actions/setup-node@v4
         with:
