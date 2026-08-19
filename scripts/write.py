@@ -187,11 +187,29 @@ def main():
         plan = json.load(f)
     with open("output/collected.json", encoding="utf-8") as f:
         collected = json.load(f)
-    prompt = WRITE_PROMPT.format(
+    base_prompt = WRITE_PROMPT.format(
         plan=json.dumps(plan, ensure_ascii=False),
         collected=json.dumps(collected, ensure_ascii=False)[:8000],
     )
-    article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=4096).strip()
+
+    def wc(md):
+        body = "\n".join(l for l in md.splitlines() if not l.lstrip().startswith("#"))
+        return len(re.sub(r"\s", "", body))
+
+    max_attempts = 3
+    article = None
+    for attempt in range(max_attempts):
+        prompt = base_prompt
+        if attempt > 0:
+            prompt += f"\n\n【上次生成不合格，请修正】上次全文为 {last_wc} 字（含标题行）。必须把正文压缩到 2400~3000 字，删除冗余段落，保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位。"
+        article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=4096).strip()
+        last_wc = wc(article)
+        print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
+        if 1800 <= last_wc <= 3000:
+            break
+        if attempt < max_attempts - 1:
+            print(f"  word count {last_wc} out of range, retrying...", file=os.sys.stderr)
+
     title, body = split_title(article)
     with open(f"output/{date.today()}.md", "w", encoding="utf-8") as f:
         f.write(article)
