@@ -198,6 +198,7 @@ def main():
 
     max_attempts = 3
     article = None
+    last_wc = 0
     for attempt in range(max_attempts):
         prompt = base_prompt
         if attempt > 0:
