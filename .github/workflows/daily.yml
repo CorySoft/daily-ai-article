@@ -53,30 +53,32 @@ jobs:
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
-      - name: S5 Inject thumb_url
+      - name: S5 Commit cover for thumb_url
         run: |
+          git config user.name "daily-bot"
+          git config user.email "daily-bot@users.noreply.github.com"
+          git add output/cover.jpg
+          git diff --cached --quiet && echo "no cover changes" || git commit -m "cover $(date +%F)" && git push
+          echo "COVER_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: S6 Inject jsdelivr thumb_url
+        run: |
+          COVER_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$COVER_COMMIT/output/cover.jpg"
           python -c "
           import json, os
           with open('output/article.json') as f: d = json.load(f)
           d['articles'][0]['thumb_url'] = os.environ['COVER_URL']
           d['articles'][0]['show_cover_pic'] = 1
           with open('output/article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
-          print('thumb_url set:', os.environ['COVER_URL'])
+          print('thumb_url set (jsdelivr):', os.environ['COVER_URL'])
           "
         env:
-          COVER_URL: "https://raw.githubusercontent.com/${{ github.repository }}/main/output/cover.jpg"
+          COVER_URL: "https://cdn.jsdelivr.net/gh/${{ github.repository }}@$COVER_COMMIT/output/cover.jpg"
 
-      - name: Commit cover for thumb_url
-        run: |
-          git config user.name "daily-bot"
-          git config user.email "daily-bot@users.noreply.github.com"
-          git add output/cover.jpg
-          git diff --cached --quiet && echo "no cover changes" || git commit -m "cover $(date +%F)" && git push
-
-      - name: S6 Verify
+      - name: S7 Verify
         run: python scripts/report.py
 
-      - name: S7 Save draft to WeChat
+      - name: S8 Save draft to WeChat
         if: hashFiles('output/article.json') != ''
         run: |
           node scripts/wechat-publish.js \
