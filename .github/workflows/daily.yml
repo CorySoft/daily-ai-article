@@ -53,27 +53,33 @@ jobs:
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
-      - name: S5 Commit cover for thumb_url
+      - name: S5 Generate article images
+        run: python scripts/gen_article_images.py
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+
+      - name: Commit images for CDN
         run: |
           git config user.name "daily-bot"
           git config user.email "daily-bot@users.noreply.github.com"
-          git add output/cover.jpg
-          git diff --cached --quiet && echo "no cover changes" || git commit -m "cover $(date +%F)" && git push
-          echo "COVER_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          git add output/cover.jpg output/images/
+          git diff --cached --quiet && echo "no image changes" || git commit -m "images $(date +%F)" && git push
+          echo "IMG_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
-      - name: S6 Inject jsdelivr thumb_url
+      - name: S6 Fill image URLs + thumb
         run: |
-          COVER_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$COVER_COMMIT/output/cover.jpg"
+          echo "CDN_BASE_URL=https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/" >> $GITHUB_ENV
+          COVER_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
           python -c "
           import json, os
           with open('output/article.json') as f: d = json.load(f)
           d['articles'][0]['thumb_url'] = os.environ['COVER_URL']
           d['articles'][0]['show_cover_pic'] = 1
           with open('output/article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
-          print('thumb_url set (jsdelivr):', os.environ['COVER_URL'])
           "
+          python scripts/fill_article.py
         env:
-          COVER_URL: "https://cdn.jsdelivr.net/gh/${{ github.repository }}@$COVER_COMMIT/output/cover.jpg"
+          COVER_URL: "https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
 
       - name: S7 Verify
         run: python scripts/report.py
