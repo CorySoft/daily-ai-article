@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 from datetime import date
 
 def word_count(md):
@@ -52,6 +53,10 @@ def main():
     with open("output/report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
     print(f"\nreport: output/report.json  all_pass={report['all_pass']}")
+
+    if not report["all_pass"]:
+        print("ERROR: verification failed, aborting pipeline", file=os.sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

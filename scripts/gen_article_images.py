@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import sys
+import time
 import urllib.request
 from io import BytesIO
 from PIL import Image
@@ -51,6 +52,8 @@ def agnes_generate(prompt, api_key, size="800x450", timeout=300, retries=2):
             raise ValueError(f"Agnes API response has neither url nor b64_json: {item}")
         except Exception as e:
             last_err = e
+            if attempt < retries - 1:
+                time.sleep(15 * (attempt + 1))  # backoff between retries
             print(f"  attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
     raise last_err
 
@@ -108,6 +111,8 @@ def main():
             print(f"  saved: {path}")
         except Exception as e:
             print(f"WARNING: image {i+1} failed ({e}), skipping", file=sys.stderr)
+        if i < len(slots) - 1:
+            time.sleep(10)  # space out calls to respect 30 RPM rate limit
 
     with open(os.path.join(base, "output", "images_map.json"), "w", encoding="utf-8") as f:
         json.dump(mapping, f, ensure_ascii=False, indent=2)

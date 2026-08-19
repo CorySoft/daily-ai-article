@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import textwrap
+import time
 import urllib.request
 import urllib.error
 from PIL import Image, ImageDraw, ImageFont
@@ -104,7 +105,7 @@ def pil_fallback(topic, angle, out_path):
     print(f"cover saved (PIL fallback): {out_path} {img.size}")
 
 
-def agnes_generate(prompt, api_key, size="1024x512"):
+def agnes_generate(prompt, api_key, size="1024x512", timeout=300, retries=2):
     """Call Agnes Image API, return image bytes or None."""
     body = json.dumps({
         "model": AGNES_MODEL,
@@ -122,20 +123,29 @@ def agnes_generate(prompt, api_key, size="1024x512"):
             "User-Agent": "Mozilla/5.0 DailyAI/1.0",
         },
     )
-    with urllib.request.urlopen(req, timeout=300) as r:
-        resp = json.loads(r.read().decode("utf-8"))
+    last_err = None
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                resp = json.loads(r.read().decode("utf-8"))
 
-    data = resp.get("data", [])
-    if not data:
-        raise ValueError(f"Agnes API returned no data: {resp}")
+            data = resp.get("data", [])
+            if not data:
+                raise ValueError(f"Agnes API returned no data: {resp}")
 
-    item = data[0]
-    if "b64_json" in item:
-        return base64.b64decode(item["b64_json"])
-    if "url" in item:
-        with urllib.request.urlopen(item["url"], timeout=60) as r:
-            return r.read()
-    raise ValueError(f"Agnes API response has neither url nor b64_json: {item}")
+            item = data[0]
+            if "b64_json" in item:
+                return base64.b64decode(item["b64_json"])
+            if "url" in item:
+                with urllib.request.urlopen(item["url"], timeout=60) as r:
+                    return r.read()
+            raise ValueError(f"Agnes API response has neither url nor b64_json: {item}")
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(15 * (attempt + 1))
+            print(f"  cover attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
+    return None
 
 
 def main():
