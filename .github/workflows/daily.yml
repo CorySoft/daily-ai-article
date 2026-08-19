@@ -64,13 +64,13 @@ jobs:
           print('thumb_url set:', os.environ['COVER_URL'])
           "
         env:
-          COVER_URL: "https://raw.githubusercontent.com/${{ github.repository }}/main/output/cover.png"
+          COVER_URL: "https://raw.githubusercontent.com/${{ github.repository }}/main/output/cover.jpg"
 
       - name: Commit cover for thumb_url
         run: |
           git config user.name "daily-bot"
           git config user.email "daily-bot@users.noreply.github.com"
-          git add output/cover.png
+          git add output/cover.jpg
           git diff --cached --quiet && echo "no cover changes" || git commit -m "cover $(date +%F)" && git push
 
       - name: S6 Verify

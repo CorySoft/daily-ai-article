@@ -16,6 +16,7 @@ from io import BytesIO
 AGNES_API_URL = "https://apihub.agnes-ai.com/v1/images/generations"
 AGNES_MODEL = "agnes-image-2.0-flash"
 COVER_W, COVER_H = 900, 383
+OUT_NAME = "cover.jpg"
 
 # ── PIL fallback constants ──────────────────────────────────────────
 FONT_PATHS = [
@@ -99,7 +100,7 @@ def pil_fallback(topic, angle, out_path):
     _pil_center_text(d, cx, div_y + 40, sub_text, _pil_font(20, True), CYAN)
     _pil_center_text(d, cx, 348, "AI 深度洞察 · 每日精选", _pil_font(16, True), SUB)
 
-    img.save(out_path)
+    img.save(out_path, "JPEG", quality=85, optimize=True)
     print(f"cover saved (PIL fallback): {out_path} {img.size}")
 
 
@@ -140,7 +141,7 @@ def agnes_generate(prompt, api_key, size="1024x512"):
 def main():
     plan_path = os.path.join(os.path.dirname(__file__), "..", "output", "plan.json")
     out_dir = os.path.join(os.path.dirname(__file__), "..", "output")
-    out_path = os.path.join(out_dir, "cover.png")
+    out_path = os.path.join(out_dir, OUT_NAME)
 
     if not os.path.exists(plan_path):
         print(f"ERROR: {plan_path} not found, skipping cover generation", file=sys.stderr)
@@ -173,8 +174,8 @@ def main():
         print(f"Generating cover via Agnes Image API...")
         img_bytes = agnes_generate(prompt, api_key, size="1024x512")
         img = Image.open(BytesIO(img_bytes))
-        img = img.resize((COVER_W, COVER_H), Image.LANCZOS)
-        img.save(out_path)
+        img = img.convert("RGB").resize((COVER_W, COVER_H), Image.LANCZOS)
+        img.save(out_path, "JPEG", quality=85, optimize=True)
         print(f"cover saved (Agnes API): {out_path} {img.size}")
     except Exception as e:
         print(f"WARNING: Agnes Image API failed ({e}), using PIL fallback", file=sys.stderr)
