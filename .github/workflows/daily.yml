@@ -37,34 +37,6 @@ jobs:
           LLM_MODEL: ${{ vars.LLM_MODEL }}
           LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
 
-      - name: S4 Generate cover
-        run: python scripts/gen_cover.py
-
-      - name: S5 Upload cover to WeChat
-        if: hashFiles('output/cover.png') != ''
-        run: |
-          TOKEN=$(curl -s -X POST "https://api.abeiyun.com/www/break.php?cmd=visit_sysdomain&password=${WX_UNLOCK_PASSWORD}" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -H "Referer: http://${WX_SERVER_HOST}/" \
-            -d "x=1" | grep -oP '(?<=<errMsg>)[^<]+')
-          MEDIA_ID=$(curl -s -X POST "http://${WX_SERVER_HOST}/upload?type=material" \
-            -H "X-Shared-Secret: ${WX_SHARED_SECRET}" \
-            -H "Cookie: zhujiwusysdomain=${TOKEN}" \
-            -F "file=@output/cover.png" | python3 -c "import sys,json; print(json.load(sys.stdin).get('media_id',''))")
-          if [ -n "$MEDIA_ID" ]; then
-            python3 -c "
-import json
-with open('output/article.json') as f: d = json.load(f)
-d['articles'][0]['thumb_media_id'] = '$MEDIA_ID'
-with open('output/article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
-print('cover media_id:', '$MEDIA_ID')
-"
-          fi
-        env:
-          WX_SERVER_HOST: ftp6310437.host109.abeiyun.cn
-          WX_SHARED_SECRET: ${{ secrets.WX_SHARED_SECRET }}
-          WX_UNLOCK_PASSWORD: ${{ secrets.WX_UNLOCK_PASSWORD }}
-
       - name: S3 Write
         run: python scripts/write.py
         env:
@@ -73,6 +45,9 @@ print('cover media_id:', '$MEDIA_ID')
           LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           ARTICLE_AUTHOR: ${{ vars.ARTICLE_AUTHOR }}
           ARTICLE_DIGEST: ${{ vars.ARTICLE_DIGEST }}
+
+      - name: S4 Generate cover
+        run: python scripts/gen_cover.py
 
       - name: S7 Verify report
         run: python scripts/report.py
