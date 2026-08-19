@@ -50,6 +50,8 @@ jobs:
 
       - name: S4 Generate cover
         run: python scripts/gen_cover.py
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
       - name: S5 Inject thumb_url
         run: |
@@ -63,6 +65,13 @@ jobs:
           "
         env:
           COVER_URL: "https://raw.githubusercontent.com/${{ github.repository }}/main/output/cover.png"
+
+      - name: Commit cover for thumb_url
+        run: |
+          git config user.name "daily-bot"
+          git config user.email "daily-bot@users.noreply.github.com"
+          git add output/cover.png
+          git diff --cached --quiet && echo "no cover changes" || git commit -m "cover $(date +%F)" && git push
 
       - name: S6 Verify
         run: python scripts/report.py
