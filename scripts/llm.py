@@ -60,6 +60,9 @@ def _repair_json(text):
     text = re.sub(r',\s*([}\]])', r'\1', text)
     # Fix unescaped newlines in string values
     text = re.sub(r'(?<=")\n(?=")', '\\n', text)
+    # Remove markdown code fences
+    text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\s*```$', '', text, flags=re.MULTILINE)
     return text
 
 def chat_json(messages, temperature=0.7, max_tokens=8192, retries=3):
@@ -73,14 +76,21 @@ def chat_json(messages, temperature=0.7, max_tokens=8192, retries=3):
                 continue
             raise ValueError(f"模型未返回 JSON: {text[:500]}")
         snippet = text[start:end + 1]
-        try:
-            return json.loads(snippet)
-        except json.JSONDecodeError:
-            repaired = _repair_json(snippet)
+        for label, candidate in [("raw", snippet), ("repaired", _repair_json(snippet))]:
+            # Try strict=False to allow control chars in strings
             try:
-                return json.loads(repaired)
+                return json.loads(candidate, strict=False)
             except json.JSONDecodeError:
-                if attempt < retries - 1:
-                    print(f"  JSON 解析失败 (attempt {attempt+1}/{retries}), 重试...")
-                    continue
-                raise ValueError(f"JSON 解析失败: {repaired[:600]}")
+                pass
+            # Try repairing more aggressively
+            try:
+                # Replace literal newlines/tabs inside strings
+                import re
+                fixed = re.sub(r'[\x00-\x1f](?=[^"]*")', ' ', candidate)
+                return json.loads(fixed, strict=False)
+            except json.JSONDecodeError:
+                pass
+        if attempt < retries - 1:
+            print(f"  JSON 解析失败 (attempt {attempt+1}/{retries}), 重试...")
+            continue
+        raise ValueError(f"JSON 解析失败: {snippet[:600]}")
