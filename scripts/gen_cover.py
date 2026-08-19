@@ -122,7 +122,7 @@ def agnes_generate(prompt, api_key, size="1024x512"):
             "User-Agent": "Mozilla/5.0 DailyAI/1.0",
         },
     )
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=300) as r:
         resp = json.loads(r.read().decode("utf-8"))
 
     data = resp.get("data", [])

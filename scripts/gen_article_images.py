@@ -16,7 +16,7 @@ AGNES_MODEL = "agnes-image-2.0-flash"
 IMG_W, IMG_H = 800, 450
 
 
-def agnes_generate(prompt, api_key, size="800x450"):
+def agnes_generate(prompt, api_key, size="800x450", timeout=300, retries=2):
     """Call Agnes Image API, return image bytes."""
     body = json.dumps({
         "model": AGNES_MODEL,
@@ -34,19 +34,25 @@ def agnes_generate(prompt, api_key, size="800x450"):
             "User-Agent": "Mozilla/5.0 DailyAI/1.0",
         },
     )
-    with urllib.request.urlopen(req, timeout=120) as r:
-        resp = json.loads(r.read().decode("utf-8"))
-
-    data = resp.get("data", [])
-    if not data:
-        raise ValueError(f"Agnes API returned no data: {resp}")
-    item = data[0]
-    if "b64_json" in item:
-        return base64.b64decode(item["b64_json"])
-    if "url" in item:
-        with urllib.request.urlopen(item["url"], timeout=60) as r:
-            return r.read()
-    raise ValueError(f"Agnes API response has neither url nor b64_json: {item}")
+    last_err = None
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                resp = json.loads(r.read().decode("utf-8"))
+            data = resp.get("data", [])
+            if not data:
+                raise ValueError(f"Agnes API returned no data: {resp}")
+            item = data[0]
+            if "b64_json" in item:
+                return base64.b64decode(item["b64_json"])
+            if "url" in item:
+                with urllib.request.urlopen(item["url"], timeout=60) as r:
+                    return r.read()
+            raise ValueError(f"Agnes API response has neither url nor b64_json: {item}")
+        except Exception as e:
+            last_err = e
+            print(f"  attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
+    raise last_err
 
 
 def build_prompt(desc, topic):
