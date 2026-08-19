@@ -44,9 +44,19 @@ def chat(messages, temperature=0.7, max_tokens=3000, retries=3):
                 time.sleep(wait)
     raise last_err
 
-def chat_json(messages, temperature=0.7, max_tokens=3000):
-    text = chat(messages, temperature, max_tokens)
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1:
-        raise ValueError(f"模型未返回 JSON: {text[:300]}")
-    return json.loads(text[start:end + 1])
+def chat_json(messages, temperature=0.7, max_tokens=4096, retries=3):
+    for attempt in range(retries):
+        text = chat(messages, temperature, max_tokens)
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end == -1:
+            if attempt < retries - 1:
+                print(f"  模型未返回 JSON (attempt {attempt+1}/{retries}), 重试...")
+                continue
+            raise ValueError(f"模型未返回 JSON: {text[:500]}")
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            if attempt < retries - 1:
+                print(f"  JSON 解析失败 (attempt {attempt+1}/{retries}), 重试...")
+                continue
+            raise ValueError(f"JSON 解析失败: {text[start:start+600]}")
