@@ -95,7 +95,6 @@ def markdown_to_html(md):
             html_lines.append(
                 f'<figure style="margin:20px 0;text-align:center;">'
                 f'<img src="IMAGESLOT_PENDING" data-desc="{alt}" style="width:100%;border-radius:8px;"/>'
-                f'<figcaption style="color:#999;font-size:13px;margin-top:6px;">{alt}</figcaption>'
                 f'</figure>'
             )
             continue
