@@ -76,27 +76,26 @@ def free_hn(count=10):
             continue
     return results
 
-def free_36kr(count=10):
+def free_techcrunch(count=10):
     results = []
     try:
-        html = _get("https://36kr.com/newsflashes")
+        html = _get("https://techcrunch.com/feed/")
         if HAS_BS4:
-            soup = BeautifulSoup(html, "html.parser")
-            items = soup.select("a.newsflash-item")[:count]
+            soup = BeautifulSoup(html, "xml")
+            items = soup.find_all("item")[:count]
             for item in items:
-                title = item.get_text(strip=True)
-                href = item.get("href")
-                url = f"https://36kr.com{href}" if href and not href.startswith("http") else href
+                title = item.title.get_text(strip=True)
+                link = item.link.get_text(strip=True)
+                desc = item.find("description")
+                desc_text = desc.get_text(strip=True)[:200] if desc else ""
                 if title:
                     results.append({
-                        "title": title, "url": url,
-                        "description": f"36kr 快讯: {title}",
-                        "source": "36kr",
+                        "title": title, "url": link,
+                        "description": f"TechCrunch: {desc_text}",
+                        "source": "TechCrunch",
                     })
-        if not results:
-            print("  [36kr] 解析失败或无结果，尝试备用匹配")
     except Exception as e:
-        print(f"  [36kr] 失败: {e}")
+        print(f"  [TechCrunch] 失败: {e}")
     return results
 
 def free_arxiv(query="artificial intelligence", count=10):
@@ -149,11 +148,11 @@ def collect_free(queries):
     except Exception as e:
         print(f"  [Hacker News] 失败: {e}")
     try:
-        kr = free_36kr(10)
-        results.append({"query": "36kr Latest", "results": kr})
-        print(f"  [36kr] -> {len(kr)} results")
+        kr = free_techcrunch(10)
+        results.append({"query": "TechCrunch Latest", "results": kr})
+        print(f"  [TechCrunch] -> {len(kr)} results")
     except Exception as e:
-        print(f"  [36kr] 失败: {e}")
+        print(f"  [TechCrunch] 失败: {e}")
     try:
         ar = free_arxiv("large language model", 8)
         results.append({"query": "ArXiv LLM", "results": ar})
