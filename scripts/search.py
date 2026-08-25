@@ -135,7 +135,9 @@ def collect_full_texts(results):
                 full_text = extract_content_from_html(html, source.get("query", ""))
                 if full_text and len(full_text) > 100:
                     item["full_text"] = full_text[:2000]
-            except Exception:
+                    print(f"  [精读] {item['title'][:10]}... ({len(full_text)} 字)")
+            except Exception as e:
+                print(f"  [精读失败] {item['title'][:10]}... {e}")
                 continue
 
 def collect_free(queries):

@@ -77,19 +77,16 @@ def chat_json(messages, temperature=0.7, max_tokens=8192, retries=3):
             raise ValueError(f"模型未返回 JSON: {text[:500]}")
         snippet = text[start:end + 1]
         for label, candidate in [("raw", snippet), ("repaired", _repair_json(snippet))]:
-            # Try strict=False to allow control chars in strings
             try:
                 return json.loads(candidate, strict=False)
-            except json.JSONDecodeError:
-                pass
-            # Try repairing more aggressively
+            except json.JSONDecodeError as e:
+                print(f"  JSON 解析失败 ({label}): {e}")
             try:
-                # Replace literal newlines/tabs inside strings
                 import re
                 fixed = re.sub(r'[\x00-\x1f](?=[^"]*")', ' ', candidate)
                 return json.loads(fixed, strict=False)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                print(f"  JSON 修复解析失败 ({label}): {e}")
         if attempt < retries - 1:
             print(f"  JSON 解析失败 (attempt {attempt+1}/{retries}), 重试...")
             continue
