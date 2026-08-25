@@ -1,8 +1,21 @@
 import json
 import os
+import re
 import urllib.request
 import urllib.parse
 from datetime import date
+
+try:
+    import httpx
+    HAS_HTTPX = True
+except ImportError:
+    HAS_HTTPX = False
+
+try:
+    from bs4 import BeautifulSoup
+    HAS_BS4 = True
+except ImportError:
+    HAS_BS4 = False
 
 def brave_search(query, api_key, count=10):
     url = f"https://api.search.brave.com/res/v1/web/search?q={urllib.parse.quote(query)}&count={count}"
@@ -18,16 +31,38 @@ def brave_search(query, api_key, count=10):
         for item in data.get("web", {}).get("results", [])
     ]
 
+def _get(url, timeout=15):
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    if HAS_HTTPX:
+        with httpx.Client(follow_redirects=True, timeout=timeout) as client:
+            r = client.get(url, headers=headers)
+            return r.text
+    else:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read().decode("utf-8")
+
+def extract_content_from_html(html, source_name=""):
+    if not HAS_BS4: return ""
+    soup = BeautifulSoup(html, "html.parser")
+    for s in soup(["script", "style", "nav", "footer", "aside", "header"]):
+        s.decompose()
+    article = soup.find("article")
+    if article:
+        text = article.get_text(separator="\n", strip=True)
+    else:
+        text = soup.get_text(separator="\n", strip=True)
+    lines = [line.strip() for line in text.splitlines() if len(line.strip()) > 15]
+    return "\n".join(lines[:50])
+
 def free_hn(count=10):
-    req = urllib.request.Request(
-        "https://hacker-news.firebaseio.com/v0/topstories.json")
+    req = urllib.request.Request("https://hacker-news.firebaseio.com/v0/topstories.json")
     with urllib.request.urlopen(req, timeout=10) as r:
         ids = json.loads(r.read().decode("utf-8"))[:count]
     results = []
     for sid in ids:
         try:
-            req = urllib.request.Request(
-                f"https://hacker-news.firebaseio.com/v0/item/{sid}.json")
+            req = urllib.request.Request(f"https://hacker-news.firebaseio.com/v0/item/{sid}.json")
             with urllib.request.urlopen(req, timeout=8) as r:
                 item = json.loads(r.read().decode("utf-8"))
             if item and item.get("title"):
@@ -41,21 +76,27 @@ def free_hn(count=10):
             continue
     return results
 
-def free_reddit(subreddit="artificial", count=10):
-    url = f"https://www.reddit.com/r/{subreddit}/hot.json?limit={count}"
-    req = urllib.request.Request(url, headers={"User-Agent": "daily-ai-article/1.0"})
-    with urllib.request.urlopen(req, timeout=10) as r:
-        data = json.loads(r.read().decode("utf-8"))
+def free_36kr(count=10):
     results = []
-    for post in data.get("data", {}).get("children", []):
-        d = post.get("data", {})
-        if d.get("title"):
-            results.append({
-                "title": d["title"],
-                "url": d.get("url", ""),
-                "description": d.get("selftext", "")[:200],
-                "source": f"r/{subreddit}",
-            })
+    try:
+        html = _get("https://36kr.com/newsflashes")
+        if HAS_BS4:
+            soup = BeautifulSoup(html, "html.parser")
+            items = soup.select("a.newsflash-item")[:count]
+            for item in items:
+                title = item.get_text(strip=True)
+                href = item.get("href")
+                url = f"https://36kr.com{href}" if href and not href.startswith("http") else href
+                if title:
+                    results.append({
+                        "title": title, "url": url,
+                        "description": f"36kr 快讯: {title}",
+                        "source": "36kr",
+                    })
+        if not results:
+            print("  [36kr] 解析失败或无结果，尝试备用匹配")
+    except Exception as e:
+        print(f"  [36kr] 失败: {e}")
     return results
 
 def free_arxiv(query="artificial intelligence", count=10):
@@ -68,7 +109,6 @@ def free_arxiv(query="artificial intelligence", count=10):
     with urllib.request.urlopen(req, timeout=15) as r:
         xml = r.read().decode("utf-8")
     results = []
-    import re
     for entry in re.findall(r"<entry>(.*?)</entry>", xml, re.DOTALL):
         title = re.search(r"<title>(.*?)</title>", entry, re.DOTALL)
         summary = re.search(r"<summary>(.*?)</summary>", entry, re.DOTALL)
@@ -82,6 +122,22 @@ def free_arxiv(query="artificial intelligence", count=10):
             })
     return results
 
+def collect_full_texts(results):
+    print("开始正文精读...")
+    for source in results:
+        for item in source.get("results", []):
+            if item.get("full_text") or not item.get("url"):
+                continue
+            if "mmbiz.qpic.cn" in item.get("url") or "github.com" in item.get("url"):
+                continue
+            try:
+                html = _get(item["url"], timeout=12)
+                full_text = extract_content_from_html(html, source.get("query", ""))
+                if full_text and len(full_text) > 100:
+                    item["full_text"] = full_text[:2000]
+            except Exception:
+                continue
+
 def collect_free(queries):
     results = []
     try:
@@ -91,17 +147,18 @@ def collect_free(queries):
     except Exception as e:
         print(f"  [Hacker News] 失败: {e}")
     try:
-        rd = free_reddit("artificial", 10)
-        results.append({"query": "r/artificial", "results": rd})
-        print(f"  [Reddit] -> {len(rd)} results")
+        kr = free_36kr(10)
+        results.append({"query": "36kr Latest", "results": kr})
+        print(f"  [36kr] -> {len(kr)} results")
     except Exception as e:
-        print(f"  [Reddit] 失败: {e}")
+        print(f"  [36kr] 失败: {e}")
     try:
         ar = free_arxiv("large language model", 8)
         results.append({"query": "ArXiv LLM", "results": ar})
         print(f"  [ArXiv] -> {len(ar)} results")
     except Exception as e:
         print(f"  [ArXiv] 失败: {e}")
+    collect_full_texts(results)
     return results
 
 def main():
@@ -128,7 +185,7 @@ def main():
         print("未设置 SEARCH_API_KEY，跳过 Brave")
 
     if not brave_ok:
-        print("Brave 不可用，fallback 到免费源 (HN/Reddit/ArXiv)...")
+        print("Brave 不可用，fallback 到免费源 (HN/36kr/ArXiv)...")
         all_results = collect_free(queries)
 
     payload = {

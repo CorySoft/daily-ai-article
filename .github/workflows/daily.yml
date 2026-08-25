@@ -17,9 +17,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Pillow + CJK font
+      - name: Install Dependencies
         run: |
-          pip install Pillow
+          pip install Pillow httpx beautifulsoup4 lxml
           sudo timeout 120 apt-get update && sudo timeout 60 apt-get install -y fonts-noto-cjk || echo "WARNING: CJK font install skipped (non-blocking, only needed for PIL fallback)"
 
       - uses: actions/setup-node@v4
