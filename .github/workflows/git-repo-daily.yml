@@ -1,0 +1,110 @@
+name: Daily Git Repo Article
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: |
+          pip install Pillow httpx beautifulsoup4 lxml
+          sudo timeout 120 apt-get update && sudo timeout 60 apt-get install -y fonts-noto-cjk || echo "WARNING: CJK font install skipped (non-blocking, only needed for PIL fallback)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: S1 Search GitHub
+        run: python scripts/git_search.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: S2 Research Project
+        run: python scripts/git_research.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+
+      - name: S3 Write Article
+        run: python scripts/git_write.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          ARTICLE_AUTHOR: ${{ vars.ARTICLE_AUTHOR }}
+          ARTICLE_DIGEST: ${{ vars.ARTICLE_DIGEST }}
+
+      - name: S4 Generate cover
+        run: python scripts/git_cover.py
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+
+      - name: S5 Generate article images
+        run: python scripts/gen_article_images.py
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+
+      - name: Commit images for CDN
+        run: |
+          git config user.name "daily-bot"
+          git config user.email "daily-bot@users.noreply.github.com"
+          git add -f output/cover.jpg output/images/
+          git diff --cached --quiet && echo "no image changes" || git commit -m "git-repo images $(date +%F)" && git push
+          echo "IMG_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: S6 Fill image URLs + thumb
+        run: |
+          COVER_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
+          python -c "
+          import json, os
+          with open('output/article.json') as f: d = json.load(f)
+          d['articles'][0]['thumb_url'] = os.environ['COVER_URL']
+          d['articles'][0]['show_cover_pic'] = 1
+          with open('output/article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
+          "
+          CDN_BASE_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/" python scripts/fill_article.py
+        env:
+          COVER_URL: "https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
+
+      - name: S7 Verify
+        run: python scripts/report.py --prefix git_
+
+      - name: S8 Save draft to WeChat
+        if: hashFiles('output/article.json') != ''
+        run: |
+          node scripts/wechat-publish.js \
+            --server "$WX_SERVER" \
+            --secret "$WX_SHARED_SECRET" \
+            --appid "$WX_APPID" \
+            --appsecret "$WX_APPSECRET" \
+            --unlock-password "$WX_UNLOCK_PASSWORD" \
+            --file output/article.json
+        env:
+          WX_SERVER: ${{ secrets.WX_SERVER }}
+          WX_SHARED_SECRET: ${{ secrets.WX_SHARED_SECRET }}
+          WX_APPID: ${{ secrets.WX_APPID }}
+          WX_APPSECRET: ${{ secrets.WX_APPSECRET }}
+          WX_UNLOCK_PASSWORD: ${{ secrets.WX_UNLOCK_PASSWORD }}
+
+      - name: Commit article
+        run: |
+          git config user.name "daily-bot"
+          git config user.email "daily-bot@users.noreply.github.com"
+          git add output/
+          git commit -m "git-repo article $(date +%F)" || echo "nothing to commit"
+          git push

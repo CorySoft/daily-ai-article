@@ -9,10 +9,18 @@ def word_count(md):
     return len(re.sub(r"\s", "", body))
 
 def main():
-    md_path = f"output/{date.today()}.md"
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prefix", default="", help="File prefix (e.g. 'git_' for git_plan.json)")
+    args = parser.parse_args()
+    prefix = args.prefix
+
+    md_path = f"output/{prefix}{date.today()}.md"
+    plan_path = f"output/{prefix}plan.json"
+
     with open(md_path, encoding="utf-8") as f:
         md = f.read()
-    with open("output/plan.json", encoding="utf-8") as f:
+    with open(plan_path, encoding="utf-8") as f:
         plan = json.load(f)
     with open("output/article.json", encoding="utf-8") as f:
         article = json.load(f)
@@ -21,7 +29,7 @@ def main():
     title = article["articles"][0]["title"]
     outline = plan.get("outline", [])
     sections = [l for l in md.splitlines() if l.lstrip().startswith("## ")]
-    has_facts = bool(plan.get("facts"))
+    has_facts = bool(plan.get("facts") or plan.get("highlights"))
 
     checks = [
         ("字数 1800~3000", 1800 <= wc <= 3000),
