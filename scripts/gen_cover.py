@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """Generate 900x383 cover image for daily-ai-article.
 Uses Agnes Image API (agnes-image-2.0-flash) with PIL fallback.
-Reads topic from output/plan.json, outputs output/cover.png.
+Covers are pure concept images with NO text (per product requirement).
+Reads topic from output/plan.json, outputs output/cover.jpg.
 """
 import base64
 import json
 import os
 import sys
-import textwrap
 import time
 import urllib.request
 import urllib.error
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from io import BytesIO
 
 AGNES_API_URL = "https://apihub.agnes-ai.com/v1/images/generations"
@@ -19,90 +19,67 @@ AGNES_MODEL = "agnes-image-2.0-flash"
 COVER_W, COVER_H = 900, 383
 OUT_NAME = "cover.jpg"
 
-# ── PIL fallback constants ──────────────────────────────────────────
-FONT_PATHS = [
-    "/system/fonts/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
-]
-
-def _find_font():
-    import glob
-    for p in FONT_PATHS:
-        if os.path.exists(p):
-            return p
-    for pattern in ["/usr/share/fonts/**/NotoSansCJK*.ttc",
-                    "/usr/share/fonts/**/NotoSansCJK*.otf",
-                    "/usr/share/fonts/**/*CJK*.ttf"]:
-        matches = glob.glob(pattern, recursive=True)
-        if matches:
-            return matches[0]
-    return None
-
-FONT = _find_font()
+NO_TEXT_BLOCK = (
+    "CRITICAL RULE: The image must be a pure abstract concept artwork. "
+    "It MUST contain ABSOLUTELY NO text, no letters, no numbers, no words, "
+    "no labels, no captions, no logos, no typography, no watermarks. "
+    "The theme words below are visual inspiration only - never render them literally."
+)
 
 BG = "#0F1322"
 PANEL = "#1A2138"
 BLUE = "#0F4C81"
 CYAN = "#55C9EA"
-TXT = "#E8EAF5"
-SUB = "#8A93B5"
-
-def _pil_font(sz, bold=False):
-    if FONT:
-        try:
-            return ImageFont.truetype(FONT, sz, index=1 if bold else 0)
-        except Exception:
-            pass
-    return ImageFont.load_default()
-
-def _pil_center_text(d, cx, y, text, f, fill, anchor="mm"):
-    d.text((cx, y), text, font=f, fill=fill, anchor=anchor)
 
 def _pil_grid(d, w, h):
     for x in range(0, w, 26):
         for y in range(0, h, 26):
             d.point((x, y), fill="#162036")
 
-def pil_fallback(topic, angle, out_path):
-    """Generate cover using PIL when API is unavailable."""
-    if FONT is None:
-        print("WARNING: No CJK font found. Chinese text will be garbled.", file=sys.stderr)
-        print("  Install: sudo apt-get install -y fonts-noto-cjk", file=sys.stderr)
+def _pil_gradient_overlay(img, alpha=40):
+    """Apply a soft vertical depth gradient (darker at top, lighter at bottom)."""
+    ov = Image.new("RGBA", (1, COVER_H))
+    for y in range(COVER_H):
+        t = y / COVER_H
+        c = (26 + int(14 * t), 34 + int(18 * t), 54 + int(28 * t), alpha)
+        ov.putpixel((0, y), c)
+    img = img.convert("RGBA")
+    img.alpha_composite(ov.resize((COVER_W, COVER_H)))
+    return img.convert("RGB")
 
+def pil_fallback(topic, angle, out_path):
+    """Generate a text-free abstract concept cover using PIL when API is unavailable."""
     w, h = COVER_W, COVER_H
     img = Image.new("RGB", (w, h), BG)
     d = ImageDraw.Draw(img)
     _pil_grid(d, w, h)
 
-    d.ellipse([40, 90, 210, 260], outline=PANEL, width=2)
-    d.ellipse([690, 90, 860, 260], outline=PANEL, width=2)
+    # Top-left glow orb (cyan) and bottom-right orb (blue)
+    d.ellipse([60, 110, 300, 350], fill="#123856")
+    d.ellipse([620, 40, 880, 300], fill="#0A2E4E")
+    d.ellipse([110, 160, 250, 300], outline=CYAN, width=3)
+    d.ellipse([670, 90, 830, 250], outline=BLUE, width=3)
 
-    cx = 450
-    tag_text = "AI 每日精选"
-    tag_f = _pil_font(16, True)
-    bbox = d.textbbox((0, 0), tag_text, font=tag_f)
-    tw = bbox[2] - bbox[0] + 44
-    d.rounded_rectangle([cx - tw // 2, 16, cx + tw // 2, 56], radius=20, fill=BLUE)
-    _pil_center_text(d, cx, 36, tag_text, tag_f, TXT)
+    # Concentric arcs at corners (circuit-like decoration)
+    for r in range(60, 170, 28):
+        d.arc([COVER_W - r * 2, -r, COVER_W, r], 180, 270, fill=CYAN, width=2)
+        d.arc([-r, COVER_H - r, r, COVER_H + r], 0, 90, fill=BLUE, width=2)
 
-    lines = textwrap.wrap(topic, width=15)[:3]
-    title_f = _pil_font(42, True)
-    y_start = 80
-    for i, line in enumerate(lines):
-        _pil_center_text(d, cx, y_start + i * 56, line, title_f, TXT)
+    # Node-network connection concept
+    nodes = [(180, 190), (450, 150), (520, 250), (720, 130), (760, 260)]
+    for i in range(len(nodes) - 1):
+        d.line([nodes[i], nodes[i + 1]], fill="#3D6B9E", width=2)
+    for pt in nodes:
+        d.ellipse([pt[0] - 5, pt[1] - 5, pt[0] + 5, pt[1] + 5], fill=CYAN)
 
-    div_y = y_start + len(lines) * 56 + 10
-    d.line([(cx - 150, div_y), (cx + 150, div_y)], fill=CYAN, width=3)
+    # Accent rings (AI/abstract motion)
+    d.ellipse([360, 60, 540, 240], outline="#1E3A5F", width=2)
+    d.ellipse([380, 80, 520, 220], outline="#23486E", width=1)
+    d.line([(360, 150), (540, 150)], fill="#1E3A5F", width=2)
 
-    sub_text = angle[:36] + "..." if len(angle) > 36 else angle
-    _pil_center_text(d, cx, div_y + 40, sub_text, _pil_font(20, True), CYAN)
-    _pil_center_text(d, cx, 348, "AI 深度洞察 · 每日精选", _pil_font(16, True), SUB)
-
+    img = _pil_gradient_overlay(img)
     img.save(out_path, "JPEG", quality=85, optimize=True)
-    print(f"cover saved (PIL fallback): {out_path} {img.size}")
+    print(f"cover saved (PIL fallback, concept): {out_path} {img.size}")
 
 
 def agnes_generate(prompt, api_key, size="1024x512", timeout=300, retries=2):
@@ -172,11 +149,11 @@ def main():
         return
 
     prompt = (
-        f"A modern, professional tech-themed banner image for a WeChat article. "
-        f"Theme: {topic}. "
-        f"Style: sleek dark blue gradient background with subtle circuit/grid patterns, "
-        f"glowing cyan/blue accent elements, futuristic AI aesthetic. "
-        f"No text on the image. "
+        f"{NO_TEXT_BLOCK} "
+        f"Abstract futuristic concept art for a WeChat banner. "
+        f"Visual theme: {topic}. "
+        f"Style: sleek dark navy gradient background with glowing cyan/blue light orbs, "
+        f"subtle circuit/node network lines, futuristic AI aesthetic, depth and motion. "
         f"Aspect ratio 2.35:1 (wide landscape), clean and minimal composition."
     )
 
