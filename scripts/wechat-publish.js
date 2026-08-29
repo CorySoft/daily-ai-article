@@ -203,6 +203,24 @@ function sendRequest(cookieHeader) {
   });
 }
 
+// 服务器返回的 body 是否表示调用失败（{error: ...}）。成功形如 {"ok":true,...}
+function responseHasError(body) {
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && typeof parsed === 'object' && parsed.error) {
+      return true;
+    }
+  } catch (e) {
+    // 非 JSON 响应：非 2xx 即视为失败
+    return true;
+  }
+  return false;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 (async () => {
   let cookie = '';
 
@@ -214,8 +232,28 @@ function sendRequest(cookieHeader) {
     }
   }
 
-  const resp = await sendRequest(cookie);
-  console.log(resp.body);
+  // 瞬时错误（如 CDN 下载超时）自动重试，最多 3 次
+  const MAX_ATTEMPTS = 3;
+  let lastBody = '';
+  let resp;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    resp = await sendRequest(cookie);
+    lastBody = resp.body;
+    if (attempt > 1) {
+      console.log(`[retry ${attempt - 1}/${MAX_ATTEMPTS - 1}] 服务器仍返回错误，稍后重试...`);
+    }
+    if (!responseHasError(resp.body)) {
+      console.log(resp.body);
+      return;
+    }
+    if (attempt < MAX_ATTEMPTS) {
+      await sleep(3000);
+    }
+  }
+
+  // 重试耗尽：打印最后一次响应，并以非零码退出，避免“静默成功”掩盖失败
+  console.log(lastBody);
+  process.exit(1);
 })().catch((e) => {
   console.error(`请求失败: ${e.message}`);
   process.exit(1);

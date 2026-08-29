@@ -8,6 +8,7 @@ on:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
       contents: write
     steps:
@@ -68,7 +69,8 @@ jobs:
 
       - name: S6 Fill image URLs + thumb
         run: |
-          COVER_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
+          CDN_HOST="${{ vars.CDN_HOST || 'cdn.jsdelivr.net' }}"
+          COVER_URL="https://$CDN_HOST/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
           python -c "
           import json, os
           with open('output/article.json') as f: d = json.load(f)
@@ -76,7 +78,7 @@ jobs:
           d['articles'][0]['show_cover_pic'] = 1
           with open('output/article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
           "
-          CDN_BASE_URL="https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/" python scripts/fill_article.py
+          CDN_BASE_URL="https://$CDN_HOST/gh/${{ github.repository }}@$IMG_COMMIT/" python scripts/fill_article.py
         env:
           COVER_URL: "https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
 
