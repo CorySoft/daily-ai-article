@@ -56,38 +56,76 @@ def _clean_content(text):
 def _repair_json(text):
     """Try to fix common JSON issues."""
     import re
-    # Remove trailing commas before } or ]
-    text = re.sub(r',\s*([}\]])', r'\1', text)
-    # Fix unescaped newlines in string values
-    text = re.sub(r'(?<=")\n(?=")', '\\n', text)
     # Remove markdown code fences
     text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.MULTILINE)
     text = re.sub(r'\s*```$', '', text, flags=re.MULTILINE)
+    # Remove trailing commas before } or ]
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+    # Insert missing commas between member key/value pairs
+    text = re.sub(r'([}\]"]|[0-9])\n([ \t]*"[^"]+":)', r'\1,\n\2', text)
+    # Insert missing commas between array/scalar string items ("..."\n"...")
+    text = re.sub(r'"\n([ \t]*)(")', r'",\n\1\2', text)
+    # Insert missing commas between bare-number / bool items
+    text = re.sub(r'([0-9]\n[ \t]*)([0-9-])', r'\1,\2', text)
+    # Fix unescaped newlines in string values
+    text = re.sub(r'(?<=")\n(?=")', '\\n', text)
     return text
 
+def _extract_json_candidates(text):
+    """Extract candidate JSON snippets: from each '{' to its balanced '}'."""
+    import re
+    candidates = []
+    for m in re.finditer(r'\{', text):
+        depth = 0
+        for idx in range(m.start(), len(text)):
+            ch = text[idx]
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    candidates.append(text[m.start():idx + 1])
+                    break
+    return candidates
+
 def chat_json(messages, temperature=0.7, max_tokens=8192, retries=3):
+    import re
     for attempt in range(retries):
-        text = chat(messages, temperature, max_tokens)
+        msgs = messages
+        if attempt > 0:
+            # Append a reproval note to break deterministic broken-JSON loops
+            msgs = list(messages)
+            extra = ("\n\n注意：你上一次输出不是合法 JSON（可能是缺失逗号或内容被截断）。"
+                     "请重新输出一个完整、合法、只含 JSON 的结果，不要输出任何解释文字、"
+                     "不要用代码围栏包裹，不要复述输入。")
+            if msgs and msgs[-1].get("role") == "user":
+                msgs[-1] = {"role": "user", "content": msgs[-1]["content"] + extra}
+            else:
+                msgs.append({"role": "user", "content": "请重新输出一个完整合法的 JSON。"})
+        # Vary temperature per attempt to avoid identical broken outputs
+        temp = min(temperature + attempt * 0.15, 1.2)
+        text = chat(msgs, temperature=temp, max_tokens=max_tokens)
         text = _clean_content(text)
-        start, end = text.find("{"), text.rfind("}")
-        if start == -1 or end == -1:
-            if attempt < retries - 1:
-                print(f"  模型未返回 JSON (attempt {attempt+1}/{retries}), 重试...")
-                continue
-            raise ValueError(f"模型未返回 JSON: {text[:500]}")
-        snippet = text[start:end + 1]
-        for label, candidate in [("raw", snippet), ("repaired", _repair_json(snippet))]:
-            try:
-                return json.loads(candidate, strict=False)
-            except json.JSONDecodeError as e:
-                print(f"  JSON 解析失败 ({label}): {e}")
-            try:
-                import re
-                fixed = re.sub(r'[\x00-\x1f](?=[^"]*")', ' ', candidate)
-                return json.loads(fixed, strict=False)
-            except json.JSONDecodeError as e:
-                print(f"  JSON 修复解析失败 ({label}): {e}")
+
+        candidates = _extract_json_candidates(text)
+        if not candidates:
+            start, end = text.find("{"), text.rfind("}")
+            if start != -1 and end != -1:
+                candidates = [text[start:end + 1]]
+        print(f"  JSON 候选: {len(candidates)} 块 (attempt {attempt+1}/{retries})")
+
+        for candidate in candidates:
+            for label, candidate in [("raw", candidate), ("repaired", _repair_json(candidate))]:
+                try:
+                    return json.loads(candidate, strict=False)
+                except json.JSONDecodeError as e:
+                    print(f"  JSON 解析失败 ({label}): {e}")
+                try:
+                    fixed = re.sub(r'[\x00-\x1f](?=[^"]*")', ' ', candidate)
+                    return json.loads(fixed, strict=False)
+                except json.JSONDecodeError as e:
+                    print(f"  JSON 修复解析失败 ({label}): {e}")
         if attempt < retries - 1:
-            print(f"  JSON 解析失败 (attempt {attempt+1}/{retries}), 重试...")
+            print(f"  JSON 解析全部失败 (attempt {attempt+1}/{retries}), 重试...")
             continue
-        raise ValueError(f"JSON 解析失败: {snippet[:600]}")
+        raise ValueError(f"JSON 解析失败: {text[:600]}")
