@@ -2,19 +2,33 @@
 """Generate in-article images via Agnes Image API.
 Reads image slot descriptions from output/images_meta.json,
 outputs JPEG images to output/images/.
+If the Agnes Image API fails for a slot, falls back to deterministic,
+per-article seeded procedural concept art (same renderer as the cover),
+so published articles always carry fresh visuals and never stale images.
 """
 import base64
+import hashlib
 import json
 import os
 import sys
 import time
 import urllib.request
+from datetime import date
 from io import BytesIO
 from PIL import Image
+
+from gen_cover import render_concept
 
 AGNES_API_URL = "https://apihub.agnes-ai.com/v1/images/generations"
 AGNES_MODEL = "agnes-image-2.0-flash"
 IMG_W, IMG_H = 800, 450
+
+
+def _slot_seed(topic, desc, index):
+    """Deterministic per-article/per-slot seed so concept fallbacks differ between
+    articles, days and slots, yet stay stable for the same slot."""
+    key = f"{date.today().isoformat()}|{topic}|{desc}|{index}"
+    return int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:16], 16)
 
 
 def agnes_generate(prompt, api_key, size="800x450", timeout=300, retries=2):
@@ -102,6 +116,7 @@ def main():
         filename = f"img_{i}.jpg"
         path = os.path.join(out_dir, filename)
         prompt = build_prompt(slot["desc"], topic)
+        seed = _slot_seed(topic, slot["desc"], i)
         try:
             print(f"Generating article image {i+1}/{len(slots)}: {slot['desc'][:30]}...")
             img_bytes = agnes_generate(prompt, api_key, size=f"{IMG_W}x{IMG_H}")
@@ -110,18 +125,21 @@ def main():
             mapping.append({"desc": slot["desc"], "local_path": f"output/images/{filename}"})
             print(f"  saved: {path}")
         except Exception as e:
-            print(f"WARNING: image {i+1} failed ({e}), skipping", file=sys.stderr)
+            print(f"WARNING: image {i+1} via Agnes failed ({e}); using seeded concept fallback", file=sys.stderr)
+            img = render_concept(seed, IMG_W, IMG_H)
+            img.save(path, "JPEG", quality=85, optimize=True)
+            mapping.append({"desc": slot["desc"], "local_path": f"output/images/{filename}"})
+            print(f"  saved (concept fallback): {path}")
         if i < len(slots) - 1:
             time.sleep(10)  # space out calls to respect 30 RPM rate limit
 
-    # Fail loudly instead of silently reusing stale/other-day images or leaving
-    # placeholder slots: the article must not publish unless every slot has a
-    # freshly generated image.
+    # Safety net: if even a slot fallback failed (disk/encoding issue), abort instead
+    # of silently reusing stale or mismatched images.
     if len(mapping) < len(slots):
         print(
-            f"ERROR: only {len(mapping)}/{len(slots)} article images were generated "
-            f"(Agnes API failures). Aborting so a stale or mismatched image is not "
-            f"published.", file=sys.stderr
+            f"ERROR: only {len(mapping)}/{len(slots)} article images are present "
+            f"(even concept fallback failed). Aborting so a stale or mismatched image "
+            f"is not published.", file=sys.stderr
         )
         sys.exit(1)
 

@@ -14,7 +14,7 @@ import time
 import urllib.request
 import urllib.error
 from datetime import date
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 from io import BytesIO
 
 AGNES_API_URL = "https://apihub.agnes-ai.com/v1/images/generations"
@@ -34,21 +34,34 @@ PANEL = "#1A2138"
 BLUE = "#0F4C81"
 CYAN = "#55C9EA"
 
-def _pil_grid(d, w, h):
-    for x in range(0, w, 26):
-        for y in range(0, h, 26):
-            d.point((x, y), fill="#162036")
+def _ramp(pal):
+    """Expand a list of RGB stops into a 768-int palette (grayscale value -> color)."""
+    flat = []
+    n = len(pal) - 1
+    for i in range(256):
+        t = i / 255.0 * n
+        lo = int(t)
+        hi = min(lo + 1, n)
+        a, b = pal[lo], pal[hi]
+        f = t - lo
+        flat.extend(int(a[k] + (b[k] - a[k]) * f) for k in range(3))
+    return flat
 
-def _pil_gradient_overlay(img, alpha=40):
-    """Apply a soft vertical depth gradient (darker at top, lighter at bottom)."""
-    ov = Image.new("RGBA", (1, COVER_H))
-    for y in range(COVER_H):
-        t = y / COVER_H
-        c = (26 + int(14 * t), 34 + int(18 * t), 54 + int(28 * t), alpha)
-        ov.putpixel((0, y), c)
-    img = img.convert("RGBA")
-    img.alpha_composite(ov.resize((COVER_W, COVER_H)))
-    return img.convert("RGB")
+
+_PALETTES = [
+    [(11, 27, 51), (20, 44, 84), (23, 66, 110), (39, 122, 178), (85, 201, 234), (167, 230, 255)],
+    [(13, 17, 36), (31, 36, 100), (68, 60, 150), (130, 104, 220), (184, 156, 255), (222, 200, 255)],
+    [(9, 28, 44), (13, 48, 66), (23, 88, 100), (42, 168, 160), (105, 231, 210), (199, 255, 238)],
+    [(18, 16, 31), (43, 24, 64), (124, 58, 102), (224, 122, 95), (242, 201, 160), (255, 238, 214)],
+]
+
+
+def _value_noise(rng, w, h, gx, gy):
+    """Smooth organic noise: upscaled random grid (value noise) -> 'L' image."""
+    small = Image.new("L", (gx, gy))
+    small.putdata([rng.randint(0, 255) for _ in range(gx * gy)])
+    return small.resize((w, h), Image.BICUBIC)
+
 
 def _seed_from_article(topic, angle):
     """Deterministic per-article seed so the fallback cover differs between articles
@@ -57,61 +70,93 @@ def _seed_from_article(topic, angle):
     return int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:16], 16)
 
 
-def _pil_palette(rng):
-    """Pick one of a few navy/cyan-blue palettes for variety while staying on-brand."""
-    palettes = [
-        ("#123856", "#0A2E4E", "#55C9EA", "#0F4C81"),
-        ("#0A2E4E", "#123856", "#0F4C81", "#55C9EA"),
-        ("#16324F", "#0B2B45", "#7FD6F2", "#1B5A9B"),
-        ("#0E2A4A", "#14365C", "#4FC3E8", "#2F6FB6"),
-    ]
-    return rng.choice(palettes)
+def render_concept(seed, w, h):
+    """Procedural concept art with organic value-noise gradients, glow bokeh,
+    energy-flow ribbons, film grain and vignette. Deterministic per seed but unique
+    across seeds, so every article/day gets distinct, evocative visuals instead of a
+    flat placeholder."""
+    rng = random.Random(seed)
+    pal = rng.choice(_PALETTES)
+    ramp = _ramp(pal)
+    dim = float(min(w, h))
+
+    # Organic cloud field: two value-noise octaves averaged + side depth shading
+    field = ImageChops.add(
+        _value_noise(rng, w, h, 9, 5),
+        _value_noise(rng, w, h, 27, 14),
+        scale=2,
+    )
+    depth = Image.new("L", (w, 1))
+    depth.putdata([int(205 - 90 * (x / w)) for x in range(w)])
+    depth = depth.resize((w, h))
+    base = ImageChops.multiply(field, depth).convert("P")
+    base.putpalette(ramp)
+    base = base.convert("RGBA")
+
+    # Soft glow bokeh: wide blurred translucent orbs + small bright dots
+    ov = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(ov)
+    for _ in range(rng.randint(8, 13)):
+        r = int(dim * rng.uniform(0.06, 0.45))
+        x = rng.randint(-r, w + r)
+        y = rng.randint(-r, h + r)
+        col = pal[min(len(pal) - 1, int(rng.uniform(1.5, len(pal))))]
+        d.ellipse([x - r, y - r, x + r, y + r], fill=col + (rng.randint(16, 50),))
+    ov = ov.filter(ImageFilter.GaussianBlur(rng.uniform(14, 34)))
+
+    ov2 = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d2 = ImageDraw.Draw(ov2)
+    for _ in range(rng.randint(16, 30)):
+        x = int(rng.uniform(0, w))
+        y = int(rng.uniform(0, h))
+        r = int(dim * rng.uniform(0.006, 0.03))
+        col = pal[rng.randint(2, len(pal) - 1)]
+        d2.ellipse([x - r, y - r, x + r, y + r], fill=col + (rng.randint(40, 115),))
+    ov2 = ov2.filter(ImageFilter.GaussianBlur(rng.uniform(1.2, 3.0)))
+
+    base = Image.alpha_composite(Image.alpha_composite(base, ov), ov2)
+
+    # Energy-flow ribbons (neural/particle traces)
+    fov = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(fov)
+    for _ in range(rng.randint(3, 6)):
+        x = rng.uniform(-w * 0.1, w * 0.3)
+        y = rng.uniform(0, h)
+        pts = []
+        for _ in range(rng.randint(18, 40)):
+            x += rng.uniform(-w * 0.026, w * 0.026)
+            y += rng.uniform(-h * 0.02, h * 0.02)
+            pts.append((x, y))
+        col = pal[rng.randint(2, len(pal) - 1)]
+        for i in range(len(pts) - 1):
+            fd.line([pts[i], pts[i + 1]], fill=col + (rng.randint(24, 62),), width=rng.randint(1, 2))
+    fov = fov.filter(ImageFilter.GaussianBlur(0.8))
+    base = Image.alpha_composite(base, fov)
+
+    # Subtle film grain
+    gn = _value_noise(rng, w, h, max(6, w // 10), max(4, h // 10))
+    a = gn.point(lambda v: 0 if v < 180 else (v - 180) // 3)
+    grain = Image.merge(
+        "RGBA",
+        (Image.new("L", (w, h), 255), Image.new("L", (w, h), 255), Image.new("L", (w, h), 255), a),
+    )
+    base = Image.alpha_composite(base, grain)
+
+    # Vignette darkening toward the edges
+    dark = ImageEnhance.Brightness(base).enhance(0.55)
+    mask = Image.new("L", (w, h))
+    ImageDraw.Draw(mask).ellipse([-w * 0.18, -h * 0.30, w * 1.18, h * 1.30], fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(int(dim * 0.22 + 1)))
+    base = Image.composite(base, dark, mask)
+    return base.convert("RGB")
+
 
 def pil_fallback(topic, angle, out_path):
     """Generate a text-free abstract concept cover using PIL when API is unavailable.
     Layout varies per article (seeded), so consecutive fallback covers are NOT identical."""
-    w, h = COVER_W, COVER_H
-    rng = random.Random(_seed_from_article(topic, angle))
-    orb_fill1, orb_fill2, ring1, ring2 = _pil_palette(rng)
-
-    img = Image.new("RGB", (w, h), BG)
-    d = ImageDraw.Draw(img)
-    _pil_grid(d, w, h)
-
-    # Top-left glow orb (cyan-family) and bottom-right orb (blue-family)
-    o1 = (rng.randint(30, 90), rng.randint(90, 140), rng.randint(280, 340), rng.randint(320, 370))
-    o2 = (rng.randint(590, 650), rng.randint(20, 60), rng.randint(850, 900), rng.randint(270, 320))
-    d.ellipse(o1, fill=orb_fill1)
-    d.ellipse(o2, fill=orb_fill2)
-    d.ellipse([o1[0] + 45, o1[1] + 40, o1[2] - 25, o1[3] - 30], outline=ring1, width=3)
-    d.ellipse([o2[0] + 50, o2[1] + 40, o2[2] - 30, o2[3] - 35], outline=ring2, width=3)
-
-    # Concentric arcs at corners (circuit-like decoration), radii vary per article
-    step = rng.randint(24, 34)
-    for r in range(rng.randint(56, 72), rng.randint(150, 190), step):
-        d.arc([w - r * 2, -r, w, r], 180, 270, fill=ring1, width=2)
-        d.arc([-r, h - r, r, h + r], 0, 90, fill=ring2, width=2)
-
-    # Node-network connection concept (randomized nodes)
-    node_count = rng.randint(4, 7)
-    nodes = [(rng.randint(60, 780), rng.randint(100, 290)) for _ in range(node_count)]
-    nodes.sort(key=lambda p: p[0])
-    for i in range(len(nodes) - 1):
-        d.line([nodes[i], nodes[i + 1]], fill="#3D6B9E", width=2)
-    for pt in nodes:
-        r = rng.randint(4, 6)
-        d.ellipse([pt[0] - r, pt[1] - r, pt[0] + r, pt[1] + r], fill=ring1)
-
-    # Accent rings (AI/abstract motion), varied size
-    cx, cy = rng.randint(340, 440), rng.randint(110, 180)
-    r_base = rng.randint(70, 100)
-    d.ellipse([cx - r_base, cy - r_base, cx + r_base, cy + r_base], outline="#1E3A5F", width=2)
-    d.ellipse([cx - r_base - 20, cy - r_base - 20, cx + r_base + 20, cy + r_base + 20], outline="#23486E", width=1)
-    d.line([(cx - r_base - 20, cy), (cx + r_base + 20, cy)], fill="#1E3A5F", width=2)
-
-    img = _pil_gradient_overlay(img)
+    img = render_concept(_seed_from_article(topic, angle), COVER_W, COVER_H)
     img.save(out_path, "JPEG", quality=85, optimize=True)
-    print(f"cover saved (PIL fallback, concept): {out_path} {img.size}")
+    print(f"cover saved (PIL fallback, concept art): {out_path} {img.size}")
 
 
 def agnes_generate(prompt, api_key, size="1024x512", timeout=300, retries=2):
