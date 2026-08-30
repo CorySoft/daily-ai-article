@@ -5,12 +5,15 @@ Covers are pure concept images with NO text (per product requirement).
 Reads topic from output/plan.json, outputs output/cover.jpg.
 """
 import base64
+import hashlib
 import json
 import os
+import random
 import sys
 import time
 import urllib.request
 import urllib.error
+from datetime import date
 from PIL import Image, ImageDraw
 from io import BytesIO
 
@@ -47,35 +50,64 @@ def _pil_gradient_overlay(img, alpha=40):
     img.alpha_composite(ov.resize((COVER_W, COVER_H)))
     return img.convert("RGB")
 
+def _seed_from_article(topic, angle):
+    """Deterministic per-article seed so the fallback cover differs between articles
+    and by day, yet stays stable for the same article."""
+    key = f"{date.today().isoformat()}|{topic}|{angle}"
+    return int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:16], 16)
+
+
+def _pil_palette(rng):
+    """Pick one of a few navy/cyan-blue palettes for variety while staying on-brand."""
+    palettes = [
+        ("#123856", "#0A2E4E", "#55C9EA", "#0F4C81"),
+        ("#0A2E4E", "#123856", "#0F4C81", "#55C9EA"),
+        ("#16324F", "#0B2B45", "#7FD6F2", "#1B5A9B"),
+        ("#0E2A4A", "#14365C", "#4FC3E8", "#2F6FB6"),
+    ]
+    return rng.choice(palettes)
+
 def pil_fallback(topic, angle, out_path):
-    """Generate a text-free abstract concept cover using PIL when API is unavailable."""
+    """Generate a text-free abstract concept cover using PIL when API is unavailable.
+    Layout varies per article (seeded), so consecutive fallback covers are NOT identical."""
     w, h = COVER_W, COVER_H
+    rng = random.Random(_seed_from_article(topic, angle))
+    orb_fill1, orb_fill2, ring1, ring2 = _pil_palette(rng)
+
     img = Image.new("RGB", (w, h), BG)
     d = ImageDraw.Draw(img)
     _pil_grid(d, w, h)
 
-    # Top-left glow orb (cyan) and bottom-right orb (blue)
-    d.ellipse([60, 110, 300, 350], fill="#123856")
-    d.ellipse([620, 40, 880, 300], fill="#0A2E4E")
-    d.ellipse([110, 160, 250, 300], outline=CYAN, width=3)
-    d.ellipse([670, 90, 830, 250], outline=BLUE, width=3)
+    # Top-left glow orb (cyan-family) and bottom-right orb (blue-family)
+    o1 = (rng.randint(30, 90), rng.randint(90, 140), rng.randint(280, 340), rng.randint(320, 370))
+    o2 = (rng.randint(590, 650), rng.randint(20, 60), rng.randint(850, 900), rng.randint(270, 320))
+    d.ellipse(o1, fill=orb_fill1)
+    d.ellipse(o2, fill=orb_fill2)
+    d.ellipse([o1[0] + 45, o1[1] + 40, o1[2] - 25, o1[3] - 30], outline=ring1, width=3)
+    d.ellipse([o2[0] + 50, o2[1] + 40, o2[2] - 30, o2[3] - 35], outline=ring2, width=3)
 
-    # Concentric arcs at corners (circuit-like decoration)
-    for r in range(60, 170, 28):
-        d.arc([COVER_W - r * 2, -r, COVER_W, r], 180, 270, fill=CYAN, width=2)
-        d.arc([-r, COVER_H - r, r, COVER_H + r], 0, 90, fill=BLUE, width=2)
+    # Concentric arcs at corners (circuit-like decoration), radii vary per article
+    step = rng.randint(24, 34)
+    for r in range(rng.randint(56, 72), rng.randint(150, 190), step):
+        d.arc([w - r * 2, -r, w, r], 180, 270, fill=ring1, width=2)
+        d.arc([-r, h - r, r, h + r], 0, 90, fill=ring2, width=2)
 
-    # Node-network connection concept
-    nodes = [(180, 190), (450, 150), (520, 250), (720, 130), (760, 260)]
+    # Node-network connection concept (randomized nodes)
+    node_count = rng.randint(4, 7)
+    nodes = [(rng.randint(60, 780), rng.randint(100, 290)) for _ in range(node_count)]
+    nodes.sort(key=lambda p: p[0])
     for i in range(len(nodes) - 1):
         d.line([nodes[i], nodes[i + 1]], fill="#3D6B9E", width=2)
     for pt in nodes:
-        d.ellipse([pt[0] - 5, pt[1] - 5, pt[0] + 5, pt[1] + 5], fill=CYAN)
+        r = rng.randint(4, 6)
+        d.ellipse([pt[0] - r, pt[1] - r, pt[0] + r, pt[1] + r], fill=ring1)
 
-    # Accent rings (AI/abstract motion)
-    d.ellipse([360, 60, 540, 240], outline="#1E3A5F", width=2)
-    d.ellipse([380, 80, 520, 220], outline="#23486E", width=1)
-    d.line([(360, 150), (540, 150)], fill="#1E3A5F", width=2)
+    # Accent rings (AI/abstract motion), varied size
+    cx, cy = rng.randint(340, 440), rng.randint(110, 180)
+    r_base = rng.randint(70, 100)
+    d.ellipse([cx - r_base, cy - r_base, cx + r_base, cy + r_base], outline="#1E3A5F", width=2)
+    d.ellipse([cx - r_base - 20, cy - r_base - 20, cx + r_base + 20, cy + r_base + 20], outline="#23486E", width=1)
+    d.line([(cx - r_base - 20, cy), (cx + r_base + 20, cy)], fill="#1E3A5F", width=2)
 
     img = _pil_gradient_overlay(img)
     img.save(out_path, "JPEG", quality=85, optimize=True)

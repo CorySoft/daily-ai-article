@@ -114,6 +114,17 @@ def main():
         if i < len(slots) - 1:
             time.sleep(10)  # space out calls to respect 30 RPM rate limit
 
+    # Fail loudly instead of silently reusing stale/other-day images or leaving
+    # placeholder slots: the article must not publish unless every slot has a
+    # freshly generated image.
+    if len(mapping) < len(slots):
+        print(
+            f"ERROR: only {len(mapping)}/{len(slots)} article images were generated "
+            f"(Agnes API failures). Aborting so a stale or mismatched image is not "
+            f"published.", file=sys.stderr
+        )
+        sys.exit(1)
+
     with open(os.path.join(base, "output", "images_map.json"), "w", encoding="utf-8") as f:
         json.dump(mapping, f, ensure_ascii=False, indent=2)
     print(f"Generated {len(mapping)} images -> output/images_map.json")
