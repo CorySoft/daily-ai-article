@@ -1,29 +1,16 @@
 """S2: Research the selected GitHub repo — fetch README + structure, analyze with LLM.
 Reads output/git_collected.json, outputs output/git_plan.json.
 """
+import base64
 import json
-import os
-import sys
-import time
-import urllib.request
 
-def _gh_get(path, token=None):
-    url = f"https://api.github.com{path}"
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "daily-ai-article/1.0",
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode("utf-8"))
+import github_api
+
 
 def fetch_readme(full_name, token=None):
     """Fetch raw README content."""
     try:
-        data = _gh_get(f"/repos/{full_name}/readme", token)
-        import base64
+        data = github_api.get(f"/repos/{full_name}/readme", token)
         content = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
         return content[:6000]  # cap at 6000 chars
     except Exception as e:
@@ -33,12 +20,12 @@ def fetch_readme(full_name, token=None):
 def fetch_tree(full_name, token=None):
     """Fetch top-level file tree."""
     try:
-        data = _gh_get(f"/repos/{full_name}/git/trees/HEAD?recursive=0", token)
+        data = github_api.get(f"/repos/{full_name}/git/trees/HEAD?recursive=0", token)
         items = data.get("tree", [])
         lines = []
         for item in items[:50]:
-            prefix = "📁" if item["type"] == "tree" else "📄"
-            lines.append(f"  {prefix} {item['path']} ({item.get('size', '')})")
+            kind = "dir" if item["type"] == "tree" else "file"
+            lines.append(f"  [{kind}] {item['path']} ({item.get('size', '')})")
         return "\n".join(lines)
     except Exception as e:
         print(f"  Tree fetch failed: {e}")
@@ -77,15 +64,14 @@ homepage: {homepage}
 
 def main():
     import llm
-    from datetime import date
 
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    token = github_api.token()
 
     with open("output/git_collected.json", encoding="utf-8") as f:
         data = json.load(f)
 
     repo = data["selected"]
-    print(f"Researching: {repo['full_name']} ({repo['stars']}⭐)")
+    print(f"Researching: {repo['full_name']} ({repo['stars']} stars)")
 
     # Fetch README and tree
     print("  Fetching README...")

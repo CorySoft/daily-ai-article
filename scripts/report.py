@@ -4,9 +4,8 @@ import re
 import sys
 from datetime import date
 
-def word_count(md):
-    body = "\n".join(l for l in md.splitlines() if not l.lstrip().startswith("#"))
-    return len(re.sub(r"\s", "", body))
+from util import word_count
+
 
 def main():
     import argparse
@@ -17,27 +16,36 @@ def main():
 
     md_path = f"output/{prefix}{date.today()}.md"
     plan_path = f"output/{prefix}plan.json"
+    article_path = f"output/{prefix}article.json"
 
     with open(md_path, encoding="utf-8") as f:
         md = f.read()
     with open(plan_path, encoding="utf-8") as f:
         plan = json.load(f)
-    with open("output/article.json", encoding="utf-8") as f:
+    with open(article_path, encoding="utf-8") as f:
         article = json.load(f)
 
     wc = word_count(md)
     title = article["articles"][0]["title"]
+    content = article["articles"][0].get("content", "")
+    thumb = article["articles"][0].get("thumb_url", "")
     outline = plan.get("outline", [])
     sections = [l for l in md.splitlines() if l.lstrip().startswith("## ")]
-    has_facts = bool(plan.get("facts") or plan.get("highlights"))
+    image_slots = len(re.findall(r'^!\[[^\]]*\]$', md, re.MULTILINE))
+    has_source = bool(re.search(r"https?://", md))
+    has_pending = "IMAGESLOT_PENDING" in content
+    thumb_ok = bool(thumb) and "$IMG_COMMIT" not in thumb
 
     checks = [
         ("字数 1800~3000", 1800 <= wc <= 3000),
         ("有标题", bool(title)),
         ("章节 >= 3", len(sections) >= 3),
-        ("包含事实标注", has_facts),
-        ("文章 JSON 生成", os.path.exists("output/article.json")),
+        ("正文含来源 URL", has_source),
+        ("配图位 >= 1", image_slots >= 1),
+        ("文章 JSON 生成", os.path.exists(article_path)),
         ("正文 Markdown 生成", os.path.exists(md_path)),
+        ("配图槽已填充", not has_pending),
+        ("封面 thumb_url 有效", thumb_ok),
     ]
 
     print("=" * 40)
@@ -45,6 +53,7 @@ def main():
     print(f"字数: {wc}")
     print(f"章节数: {len(sections)}")
     print(f"策划章节: {len(outline)}")
+    print(f"配图位: {image_slots}")
     print("-" * 40)
     for name, ok in checks:
         print(f"[{'PASS' if ok else 'FAIL'}] {name}")
@@ -58,13 +67,14 @@ def main():
         "checks": {name: ok for name, ok in checks},
         "all_pass": all(ok for _, ok in checks),
     }
-    with open("output/report.json", "w", encoding="utf-8") as f:
+    with open(f"output/{prefix}report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
-    print(f"\nreport: output/report.json  all_pass={report['all_pass']}")
+    print(f"\nreport: output/{prefix}report.json  all_pass={report['all_pass']}")
 
     if not report["all_pass"]:
-        print("ERROR: verification failed, aborting pipeline", file=os.sys.stderr)
+        print("ERROR: verification failed, aborting pipeline", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

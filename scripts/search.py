@@ -121,10 +121,10 @@ def free_arxiv(query="artificial intelligence", count=10):
             })
     return results
 
-def collect_full_texts(results):
+def collect_full_texts(results, per_source=4):
     print("开始正文精读...")
     for source in results:
-        for item in source.get("results", []):
+        for item in source.get("results", [])[:per_source]:
             if item.get("full_text") or not item.get("url"):
                 continue
             if "mmbiz.qpic.cn" in item.get("url") or "github.com" in item.get("url"):
@@ -159,7 +159,6 @@ def collect_free(queries):
         print(f"  [ArXiv] -> {len(ar)} results")
     except Exception as e:
         print(f"  [ArXiv] 失败: {e}")
-    collect_full_texts(results)
     return results
 
 def main():
@@ -186,8 +185,17 @@ def main():
         print("未设置 SEARCH_API_KEY，跳过 Brave")
 
     if not brave_ok:
-        print("Brave 不可用，fallback 到免费源 (HN/36kr/ArXiv)...")
+        print("Brave 不可用，fallback 到免费源 (HN/TechCrunch/ArXiv)...")
         all_results = collect_free(queries)
+    else:
+        print("Brave 成功，补充免费源...")
+        try:
+            extra = collect_free(queries)
+            all_results.extend(extra)
+        except Exception as e:
+            print(f"  免费源补充失败: {e}")
+
+    collect_full_texts(all_results)
 
     payload = {
         "date": str(date.today()),
@@ -195,6 +203,7 @@ def main():
         "sources": all_results,
         "engine": "brave" if brave_ok else "free",
     }
+    os.makedirs("output", exist_ok=True)
     with open("output/collected.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     print(f"collected -> output/collected.json | engine={payload['engine']} | sources={len(all_results)}")

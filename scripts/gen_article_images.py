@@ -6,21 +6,18 @@ If the Agnes Image API fails for a slot, falls back to deterministic,
 per-article seeded procedural concept art (same renderer as the cover),
 so published articles always carry fresh visuals and never stale images.
 """
-import base64
 import hashlib
 import json
 import os
 import sys
 import time
-import urllib.request
 from datetime import date
 from io import BytesIO
 from PIL import Image
 
-from gen_cover import render_concept
+from gen_cover import render_concept, agnes_generate
+from image_style import article_prompt, fit_crop
 
-AGNES_API_URL = "https://apihub.agnes-ai.com/v1/images/generations"
-AGNES_MODEL = "agnes-image-2.0-flash"
 IMG_W, IMG_H = 800, 450
 
 
@@ -31,62 +28,21 @@ def _slot_seed(topic, desc, index):
     return int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:16], 16)
 
 
-def agnes_generate(prompt, api_key, size="800x450", timeout=300, retries=2):
-    """Call Agnes Image API, return image bytes."""
-    body = json.dumps({
-        "model": AGNES_MODEL,
-        "prompt": prompt,
-        "size": size,
-        "extra_body": {"response_format": "b64_json"},
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        AGNES_API_URL,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Mozilla/5.0 DailyAI/1.0",
-        },
-    )
-    last_err = None
-    for attempt in range(retries):
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                resp = json.loads(r.read().decode("utf-8"))
-            data = resp.get("data", [])
-            if not data:
-                raise ValueError(f"Agnes API returned no data: {resp}")
-            item = data[0]
-            if "b64_json" in item:
-                return base64.b64decode(item["b64_json"])
-            if "url" in item:
-                with urllib.request.urlopen(item["url"], timeout=60) as r:
-                    return r.read()
-            raise ValueError(f"Agnes API response has neither url nor b64_json: {item}")
-        except Exception as e:
-            last_err = e
-            if attempt < retries - 1:
-                time.sleep(15 * (attempt + 1))  # backoff between retries
-            print(f"  attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
-    raise last_err
-
-
-def build_prompt(desc, topic):
-    return (
-        f"An editorial illustration for a Chinese tech article about: {topic}. "
-        f"Scene: {desc}. "
-        f"Style: clean modern tech illustration, flat design with subtle gradient, "
-        f"soft lighting, professional, high quality. "
-        f"No text or watermarks on the image. Aspect ratio 16:9."
-    )
+def build_prompt(desc, topic, index=0):
+    return article_prompt(desc, topic, index=index)
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prefix", default="", help="File prefix (e.g. 'git_' )")
+    args = parser.parse_args()
+    prefix = args.prefix
+
     base = os.path.join(os.path.dirname(__file__), "..")
-    meta_path = os.path.join(base, "output", "images_meta.json")
-    out_dir = os.path.join(base, "output", "images")
-    plan_path = os.path.join(base, "output", "plan.json")
+    meta_path = os.path.join(base, "output", f"{prefix}images_meta.json")
+    out_dir = os.path.join(base, "output", f"{prefix}images")
+    plan_path = os.path.join(base, "output", f"{prefix}plan.json")
 
     if not os.path.exists(meta_path):
         print("WARNING: images_meta.json not found, no in-article images to generate", file=sys.stderr)
@@ -105,8 +61,7 @@ def main():
 
     api_key = os.environ.get("LLM_API_KEY")
     if not api_key:
-        print("WARNING: LLM_API_KEY not set, cannot generate images", file=sys.stderr)
-        sys.exit(0)
+        print("WARNING: LLM_API_KEY not set, using concept fallback for all slots", file=sys.stderr)
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -115,20 +70,24 @@ def main():
     for i, slot in enumerate(slots):
         filename = f"img_{i}.jpg"
         path = os.path.join(out_dir, filename)
-        prompt = build_prompt(slot["desc"], topic)
+        prompt = build_prompt(slot["desc"], topic, index=i)
         seed = _slot_seed(topic, slot["desc"], i)
         try:
+            if not api_key:
+                raise RuntimeError("LLM_API_KEY not set")
             print(f"Generating article image {i+1}/{len(slots)}: {slot['desc'][:30]}...")
-            img_bytes = agnes_generate(prompt, api_key, size=f"{IMG_W}x{IMG_H}")
-            img = Image.open(BytesIO(img_bytes)).convert("RGB").resize((IMG_W, IMG_H), Image.LANCZOS)
-            img.save(path, "JPEG", quality=85, optimize=True)
-            mapping.append({"desc": slot["desc"], "local_path": f"output/images/{filename}"})
+            img_bytes = agnes_generate(prompt, api_key, size="1024x576")
+            if not img_bytes:
+                raise RuntimeError("Agnes returned no image")
+            img = fit_crop(Image.open(BytesIO(img_bytes)), IMG_W, IMG_H)
+            img.save(path, "JPEG", quality=88, optimize=True)
+            mapping.append({"desc": slot["desc"], "local_path": f"output/{prefix}images/{filename}"})
             print(f"  saved: {path}")
         except Exception as e:
             print(f"WARNING: image {i+1} via Agnes failed ({e}); using seeded concept fallback", file=sys.stderr)
-            img = render_concept(seed, IMG_W, IMG_H)
+            img = render_concept(seed, IMG_W, IMG_H, topic=topic, angle=slot["desc"])
             img.save(path, "JPEG", quality=85, optimize=True)
-            mapping.append({"desc": slot["desc"], "local_path": f"output/images/{filename}"})
+            mapping.append({"desc": slot["desc"], "local_path": f"output/{prefix}images/{filename}"})
             print(f"  saved (concept fallback): {path}")
         if i < len(slots) - 1:
             time.sleep(10)  # space out calls to respect 30 RPM rate limit
@@ -143,9 +102,9 @@ def main():
         )
         sys.exit(1)
 
-    with open(os.path.join(base, "output", "images_map.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(base, "output", f"{prefix}images_map.json"), "w", encoding="utf-8") as f:
         json.dump(mapping, f, ensure_ascii=False, indent=2)
-    print(f"Generated {len(mapping)} images -> output/images_map.json")
+    print(f"Generated {len(mapping)} images -> output/{prefix}images_map.json")
 
 
 if __name__ == "__main__":

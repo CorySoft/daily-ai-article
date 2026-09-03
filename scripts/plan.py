@@ -1,7 +1,6 @@
 import json
-import os
-from datetime import date
 import llm
+from util import slim_collected
 
 PLAN_PROMPT = """你是公众号主编。基于以下检索素材做选题策划。
 
@@ -20,10 +19,7 @@ PLAN_PROMPT = """你是公众号主编。基于以下检索素材做选题策划
 def main():
     with open("output/collected.json", encoding="utf-8") as f:
         collected = json.load(f)
-    collected_str = json.dumps(collected, ensure_ascii=False)[:6000]
-    cut = collected_str.rfind(",")  # cut at a field boundary, not mid-string
-    if cut > 200:
-        collected_str = collected_str[:cut]
+    collected_str = slim_collected(collected, max_chars=6000)
     print(f"Prompt size: {len(collected_str)} chars")
     prompt = PLAN_PROMPT.format(collected=collected_str)
     plan = llm.chat_json([{"role": "user", "content": prompt}], temperature=0.5, max_tokens=8192)

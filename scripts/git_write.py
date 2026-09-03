@@ -1,15 +1,15 @@
 """S3: Write a 【开源精选】 article about the featured repo.
-Reads output/git_plan.json, outputs git_YYYY-MM-DD.md, output/article.json, output/images_meta.json.
+Reads output/git_plan.json, outputs git_YYYY-MM-DD.md, output/git_article.json, output/git_images_meta.json.
 Imports markdown_to_html from write.py to avoid duplication.
 """
 import json
 import os
-import re
 import sys
 from datetime import date
 
 sys.path.insert(0, os.path.dirname(__file__))
 import llm
+from util import word_count as wc
 from write import markdown_to_html, extract_image_slots
 
 WRITE_PROMPT = """你是资深公众号「开源精选」专栏作者。根据以下开源项目分析，写一篇推荐文章。
@@ -35,6 +35,8 @@ WRITE_PROMPT = """你是资深公众号「开源精选」专栏作者。根据�
 1. 每个核心章节用 `##` 小标题分段（小标题要具体、有吸引力）
 2. 多用排版标记：**加粗**关键观点、>引用数据或言论、- 列要点
 3. 在合适的章节标注 2~3 张配图位置：`![配图描述：一句话说明画面内容]`
+    - 描述必须是可绘制的物体/场景/材质/光影，不要写 GitHub 截图、Star 按钮、文档站界面、徽章
+    - 不要出现文字、数字、Logo；用隐喻表达项目特质
 4. 标题第一行用 `#`，其后空一行接正文
 5. 结尾附上 GitHub 链接格式：`🔗 GitHub: https://github.com/XXX`
 
@@ -45,22 +47,13 @@ WRITE_PROMPT = """你是资深公众号「开源精选」专栏作者。根据�
 def main():
     with open("output/git_plan.json", encoding="utf-8") as f:
         plan = json.load(f)
-    with open("output/git_collected.json", encoding="utf-8") as f:
-        collected = json.load(f)
 
-    # Fetch README for the write prompt
     readme = ""
     try:
-        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        import base64
+        import github_api
         repo_name = plan["repo"]["full_name"]
-        import base64, urllib.request
-        url = f"https://api.github.com/repos/{repo_name}/readme"
-        headers = {"Accept": "application/vnd.github+json", "User-Agent": "daily-ai-article/1.0"}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read().decode("utf-8"))
+        data = github_api.get(f"/repos/{repo_name}/readme")
         readme = base64.b64decode(data["content"]).decode("utf-8", errors="replace")[:4000]
     except Exception as e:
         print(f"  README fetch for write failed: {e}")
@@ -70,11 +63,6 @@ def main():
         readme=readme[:3000],
     )
 
-    def wc(md):
-        body = "\n".join(l for l in md.splitlines() if not l.lstrip().startswith("#"))
-        return len(re.sub(r"\s", "", body))
-
-    # Write with retry on word count
     max_attempts = 3
     article = None
     last_wc = 0
@@ -85,7 +73,7 @@ def main():
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=4096).strip()
         last_wc = wc(article)
         print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
-        if 1800 <= last_wc <= 3200:
+        if 1800 <= last_wc <= 3000:
             break
         if attempt < max_attempts - 1:
             print(f"  word count {last_wc} out of range, retrying...")
@@ -108,12 +96,10 @@ def main():
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(article)
 
-    # Image slots
     image_slots = extract_image_slots(body)
-    with open("output/images_meta.json", "w", encoding="utf-8") as f:
+    with open("output/git_images_meta.json", "w", encoding="utf-8") as f:
         json.dump(image_slots, f, ensure_ascii=False, indent=2)
 
-    # Build article.json
     articles = {
         "title": title,
         "author": os.environ.get("ARTICLE_AUTHOR", "CorySoft"),
@@ -125,10 +111,21 @@ def main():
         "draft": True,
         "articles": [articles],
     }
-    with open("output/article.json", "w", encoding="utf-8") as f:
+    with open("output/git_article.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
-    print(f"article written: {md_path} | payload: output/article.json | images: {len(image_slots)}")
+    featured_path = "output/git_featured.json"
+    featured = []
+    if os.path.exists(featured_path):
+        with open(featured_path, encoding="utf-8") as f:
+            featured = json.load(f)
+    full_name = plan.get("repo", {}).get("full_name")
+    if full_name and all(item.get("full_name") != full_name for item in featured):
+        featured.append({"full_name": full_name, "date": date.today().isoformat()})
+        with open(featured_path, "w", encoding="utf-8") as f:
+            json.dump(featured, f, ensure_ascii=False, indent=2)
+
+    print(f"article written: {md_path} | payload: output/git_article.json | images: {len(image_slots)}")
     print(f"  title: {title}")
 
 if __name__ == "__main__":

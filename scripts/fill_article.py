@@ -8,9 +8,15 @@ import os
 import sys
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prefix", default="", help="File prefix (e.g. 'git_' )")
+    args = parser.parse_args()
+    prefix = args.prefix
+
     base = os.path.join(os.path.dirname(__file__), "..")
-    article_path = os.path.join(base, "output", "article.json")
-    map_path = os.path.join(base, "output", "images_map.json")
+    article_path = os.path.join(base, "output", f"{prefix}article.json")
+    map_path = os.path.join(base, "output", f"{prefix}images_map.json")
 
     if not os.path.exists(article_path):
         print("ERROR: article.json not found", file=sys.stderr)
@@ -24,6 +30,8 @@ def main():
     if not base_url:
         print("ERROR: CDN_BASE_URL not set", file=sys.stderr)
         sys.exit(1)
+    if not base_url.endswith("/"):
+        base_url += "/"
 
     # Build ordered list of URLs from images_map.json
     urls = []
@@ -34,14 +42,16 @@ def main():
             urls.append(base_url + item["local_path"])
 
     content = data["articles"][0]["content"]
+    pending = content.count('src="IMAGESLOT_PENDING"')
     replaced = 0
-    # Replace each IMAGESLOT_PENDING in order with the generated image URL
     for url in urls:
         if 'src="IMAGESLOT_PENDING"' in content:
             content = content.replace('src="IMAGESLOT_PENDING"', f'src="{url}"', 1)
             replaced += 1
-    # Hide any remaining unfilled slots
-    content = content.replace('src="IMAGESLOT_PENDING"', 'src=""')
+    leftover = content.count('src="IMAGESLOT_PENDING"')
+    if leftover:
+        print(f"ERROR: {leftover}/{pending} image slots still pending", file=sys.stderr)
+        sys.exit(1)
 
     data["articles"][0]["content"] = content
     with open(article_path, "w", encoding="utf-8") as f:

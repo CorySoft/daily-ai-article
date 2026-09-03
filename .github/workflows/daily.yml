@@ -5,6 +5,10 @@ on:
     - cron: "0 8 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: article-pipeline
+  cancel-in-progress: false
+
 jobs:
   generate:
     runs-on: ubuntu-latest
@@ -13,6 +17,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -20,7 +27,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install Pillow httpx beautifulsoup4 lxml
+          pip install -r requirements.txt
           sudo timeout 120 apt-get update && sudo timeout 60 apt-get install -y fonts-noto-cjk || echo "WARNING: CJK font install skipped (non-blocking, only needed for PIL fallback)"
 
       - uses: actions/setup-node@v4
@@ -64,13 +71,18 @@ jobs:
           git config user.name "daily-bot"
           git config user.email "daily-bot@users.noreply.github.com"
           git add -f output/cover.jpg output/images/
-          git diff --cached --quiet && echo "no image changes" || git commit -m "images $(date +%F)" && git push
+          git diff --cached --quiet && echo "no image changes" || git commit -m "images $(date +%F)"
+          STASHED=0
+          if [ -n "$(git status --porcelain)" ]; then git stash push -u -m "pipeline-wip"; STASHED=1; fi
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push
           echo "IMG_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          if [ "$STASHED" = 1 ]; then git stash pop; fi
 
       - name: S6 Fill image URLs + thumb
         run: |
           CDN_HOST="${{ vars.CDN_HOST || 'cdn.jsdelivr.net' }}"
-          COVER_URL="https://$CDN_HOST/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
+          export COVER_URL="https://${CDN_HOST}/gh/${{ github.repository }}@${IMG_COMMIT}/output/cover.jpg"
           python -c "
           import json, os
           with open('output/article.json') as f: d = json.load(f)
@@ -78,21 +90,19 @@ jobs:
           d['articles'][0]['show_cover_pic'] = 1
           with open('output/article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
           "
-          CDN_BASE_URL="https://$CDN_HOST/gh/${{ github.repository }}@$IMG_COMMIT/" python scripts/fill_article.py
-        env:
-          COVER_URL: "https://cdn.jsdelivr.net/gh/${{ github.repository }}@$IMG_COMMIT/output/cover.jpg"
+          export CDN_BASE_URL="https://${CDN_HOST}/gh/${{ github.repository }}@${IMG_COMMIT}/"
+          python scripts/fill_article.py
 
       - name: S7 Verify
         run: python scripts/report.py
 
       - name: Commit article
-        # Persist the article + image URLs BEFORE publishing, so a failed publish
-        # never loses the content and can simply be re-published from git state.
         run: |
           git config user.name "daily-bot"
           git config user.email "daily-bot@users.noreply.github.com"
           git add output/
           git commit -m "daily article $(date +%F)" || echo "nothing to commit"
+          git pull --rebase origin "${{ github.ref_name }}"
           git push
 
       - name: S8 Save draft to WeChat

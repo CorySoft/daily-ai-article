@@ -12,27 +12,15 @@ import random
 import sys
 import time
 import urllib.request
-import urllib.error
 from datetime import date
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 from io import BytesIO
+from image_style import cover_prompt, fit_crop
 
 AGNES_API_URL = "https://apihub.agnes-ai.com/v1/images/generations"
 AGNES_MODEL = "agnes-image-2.0-flash"
 COVER_W, COVER_H = 900, 383
 OUT_NAME = "cover.jpg"
-
-NO_TEXT_BLOCK = (
-    "CRITICAL RULE: The image must be a pure abstract concept artwork. "
-    "It MUST contain ABSOLUTELY NO text, no letters, no numbers, no words, "
-    "no labels, no captions, no logos, no typography, no watermarks. "
-    "The theme words below are visual inspiration only - never render them literally."
-)
-
-BG = "#0F1322"
-PANEL = "#1A2138"
-BLUE = "#0F4C81"
-CYAN = "#55C9EA"
 
 def _ramp(pal):
     """Expand a list of RGB stops into a 768-int palette (grayscale value -> color)."""
@@ -70,13 +58,20 @@ def _seed_from_article(topic, angle):
     return int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:16], 16)
 
 
-def render_concept(seed, w, h):
-    """Procedural concept art with organic value-noise gradients, glow bokeh,
-    energy-flow ribbons, film grain and vignette. Deterministic per seed but unique
-    across seeds, so every article/day gets distinct, evocative visuals instead of a
-    flat placeholder."""
+def _palette_for(topic, angle, rng):
+    blob = f"{topic} {angle}".lower()
+    if any(k in blob for k in ("rust", "java", "降价", "warm")):
+        return _PALETTES[3]
+    if any(k in blob for k in ("开源", "安全", "隐私", "github")):
+        return _PALETTES[1]
+    if any(k in blob for k in ("内存", "stream", "流式", "polars")):
+        return _PALETTES[2]
+    return rng.choice(_PALETTES)
+
+
+def render_concept(seed, w, h, topic="", angle=""):
     rng = random.Random(seed)
-    pal = rng.choice(_PALETTES)
+    pal = _palette_for(topic, angle, rng)
     ramp = _ramp(pal)
     dim = float(min(w, h))
 
@@ -154,7 +149,7 @@ def render_concept(seed, w, h):
 def pil_fallback(topic, angle, out_path):
     """Generate a text-free abstract concept cover using PIL when API is unavailable.
     Layout varies per article (seeded), so consecutive fallback covers are NOT identical."""
-    img = render_concept(_seed_from_article(topic, angle), COVER_W, COVER_H)
+    img = render_concept(_seed_from_article(topic, angle), COVER_W, COVER_H, topic=topic, angle=angle)
     img.save(out_path, "JPEG", quality=85, optimize=True)
     print(f"cover saved (PIL fallback, concept art): {out_path} {img.size}")
 
@@ -202,6 +197,38 @@ def agnes_generate(prompt, api_key, size="1024x512", timeout=300, retries=2):
     return None
 
 
+def save_cover_bytes(img_bytes, out_path):
+    img = Image.open(BytesIO(img_bytes))
+    img = fit_crop(img, COVER_W, COVER_H)
+    img.save(out_path, "JPEG", quality=88, optimize=True)
+    return img.size
+
+
+def generate_cover(plan, out_path, kind="daily"):
+    topic = plan.get("topic", "AI Daily")
+    angle = plan.get("tagline") or plan.get("angle", "")
+    language = (plan.get("repo") or {}).get("language", "")
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+
+    api_key = os.environ.get("LLM_API_KEY")
+    if not api_key:
+        print("WARNING: LLM_API_KEY not set, using PIL fallback", file=sys.stderr)
+        pil_fallback(topic, angle, out_path)
+        return
+
+    prompt = cover_prompt(topic, angle=angle, language=language, kind=kind)
+    try:
+        print(f"Generating {kind} cover via Agnes Image API...")
+        img_bytes = agnes_generate(prompt, api_key, size="1024x512")
+        if not img_bytes:
+            raise RuntimeError("Agnes returned no image")
+        size = save_cover_bytes(img_bytes, out_path)
+        print(f"cover saved (Agnes API): {out_path} {size}")
+    except Exception as e:
+        print(f"WARNING: Agnes Image API failed ({e}), using PIL fallback", file=sys.stderr)
+        pil_fallback(topic, angle, out_path)
+
+
 def main():
     plan_path = os.path.join(os.path.dirname(__file__), "..", "output", "plan.json")
     out_dir = os.path.join(os.path.dirname(__file__), "..", "output")
@@ -213,37 +240,7 @@ def main():
 
     with open(plan_path, encoding="utf-8") as f:
         plan = json.load(f)
-
-    topic = plan.get("topic", "AI Daily")
-    angle = plan.get("angle", "")
-
-    os.makedirs(out_dir, exist_ok=True)
-
-    api_key = os.environ.get("LLM_API_KEY")
-    if not api_key:
-        print("WARNING: LLM_API_KEY not set, using PIL fallback", file=sys.stderr)
-        pil_fallback(topic, angle, out_path)
-        return
-
-    prompt = (
-        f"{NO_TEXT_BLOCK} "
-        f"Abstract futuristic concept art for a WeChat banner. "
-        f"Visual theme: {topic}. "
-        f"Style: sleek dark navy gradient background with glowing cyan/blue light orbs, "
-        f"subtle circuit/node network lines, futuristic AI aesthetic, depth and motion. "
-        f"Aspect ratio 2.35:1 (wide landscape), clean and minimal composition."
-    )
-
-    try:
-        print(f"Generating cover via Agnes Image API...")
-        img_bytes = agnes_generate(prompt, api_key, size="1024x512")
-        img = Image.open(BytesIO(img_bytes))
-        img = img.convert("RGB").resize((COVER_W, COVER_H), Image.LANCZOS)
-        img.save(out_path, "JPEG", quality=85, optimize=True)
-        print(f"cover saved (Agnes API): {out_path} {img.size}")
-    except Exception as e:
-        print(f"WARNING: Agnes Image API failed ({e}), using PIL fallback", file=sys.stderr)
-        pil_fallback(topic, angle, out_path)
+    generate_cover(plan, out_path, kind="daily")
 
 
 if __name__ == "__main__":

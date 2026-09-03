@@ -2,8 +2,10 @@ import argparse
 import json
 import os
 import re
+import sys
 from datetime import date
 import llm
+from util import slim_collected, word_count as wc
 
 WRITE_PROMPT = """你是资深公众号作者。根据选题策划，写一篇原创中文公众号文章。
 
@@ -31,8 +33,9 @@ WRITE_PROMPT = """你是资深公众号作者。根据选题策划，写一篇�
 1. 每个核心章节必须用 `##` 小标题分段（小标题要具体、有吸引力，不要空泛）
 2. 正文多用排版标记：**加粗**关键观点、>引用数据或言论、- 列要点（每章至少一个列表或引用）
 3. 在合适的章节标注 2~3 张配图位置，格式：`![配图描述：一句话说明画面内容]`
-   - 配图描述要具体，能指导画图（例如场景、物体、风格、色调）
-   - 放在正文段落之间的独立一行
+    - 描述必须是可绘制的物体/场景/材质/光影，不要写截图、界面、仓库页、徽章、按钮、流程图、带字屏幕
+    - 不要出现文字、数字、Logo；用隐喻表达观点（例如「过热的核心被冷却管道环绕」）
+    - 放在正文段落之间的独立一行
 4. 标题第一行用 `#`，其后空一行接正文
 
 【输出格式】
@@ -131,18 +134,25 @@ def markdown_to_html(md):
             html_lines.append(_inline_md(line.strip()[1:].strip()))
         # Unordered list
         elif re.match(r"^[-*+]\s+", line):
-            if not in_list or list_type != "ul":
+            if in_list and list_type != "ul":
+                html_lines.append("</ol>")
+                in_list = False
+            if not in_list:
                 html_lines.append('<ul style="margin:12px 0;padding-left:20px;">')
                 in_list = True
                 list_type = "ul"
             html_lines.append(f'<li style="margin:6px 0;line-height:1.7;">{_inline_md(line.strip()[2:].strip())}</li>')
         # Ordered list
         elif re.match(r"^\d+\.\s+", line):
-            if not in_list or list_type != "ol":
+            if in_list and list_type != "ol":
+                html_lines.append("</ul>")
+                in_list = False
+            if not in_list:
                 html_lines.append('<ol style="margin:12px 0;padding-left:20px;">')
                 in_list = True
                 list_type = "ol"
-            html_lines.append(f'<li style="margin:6px 0;line-height:1.7;">{_inline_md(line.strip())}</li>')
+            item_text = re.sub(r'^\d+\.\s+', '', line.strip())
+            html_lines.append(f'<li style="margin:6px 0;line-height:1.7;">{_inline_md(item_text)}</li>')
         # Horizontal rule
         elif re.match(r"^[-*_]{3,}\s*$", line):
             html_lines.append('<hr style="border:none;border-top:1px solid #E5E7EB;margin:20px 0;">')
@@ -188,12 +198,8 @@ def main():
         collected = json.load(f)
     base_prompt = WRITE_PROMPT.format(
         plan=json.dumps(plan, ensure_ascii=False),
-        collected=json.dumps(collected, ensure_ascii=False)[:8000],
+        collected=slim_collected(collected),
     )
-
-    def wc(md):
-        body = "\n".join(l for l in md.splitlines() if not l.lstrip().startswith("#"))
-        return len(re.sub(r"\s", "", body))
 
     max_attempts = 3
     article = None
@@ -208,7 +214,7 @@ def main():
         if 1800 <= last_wc <= 3000:
             break
         if attempt < max_attempts - 1:
-            print(f"  word count {last_wc} out of range, retrying...", file=os.sys.stderr)
+            print(f"  word count {last_wc} out of range, retrying...", file=sys.stderr)
 
     title, body = split_title(article)
     with open(f"output/{date.today()}.md", "w", encoding="utf-8") as f:
