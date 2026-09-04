@@ -50,16 +50,16 @@ def split_title(article):
 
 def _inline_md(text):
     """Convert inline markdown (bold, italic, code, links) to HTML."""
-    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-    text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
-    text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#0F4C81;font-weight:bold;">\1</strong>', text)
+    text = re.sub(r'\*(.+?)\*', r'<em style="color:#0F4C81;">\1</em>', text)
+    text = re.sub(r'`(.+?)`', r'<code style="background:#F0F6FA;color:#0F4C81;padding:2px 6px;border-radius:4px;font-size:0.9em;">\1</code>', text)
     text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:#0F4C81;text-decoration:underline;">\1</a>', text)
     return text
 
 _HEADING_STYLE = {
-    1: 'font-size:24px;color:#0F1322;font-weight:bold;margin:10px 0;padding:12px 16px;background:linear-gradient(90deg,#0F4C81,#55C9EA);color:#fff;border-radius:6px;',
+    1: 'background:#0F4C81;color:#fff;border-radius:8px;font-size:22px;display:table;margin:4em auto 2em;padding:14px 20px;font-weight:bold;',
     2: 'font-size:20px;color:#0F4C81;font-weight:bold;margin:24px 0 12px;padding-left:12px;border-left:4px solid #55C9EA;',
-    3: 'font-size:17px;color:#0F1322;font-weight:bold;margin:18px 0 8px;',
+    3: 'font-size:17px;color:#0F4C81;font-weight:bold;margin:18px 0 8px;',
 }
 
 def markdown_to_html(md):
