@@ -187,6 +187,19 @@ def extract_image_slots(md):
     return slots
 
 
+def _extract_source_urls(collected):
+    """Extract up to 3 source URLs from collected data for citation."""
+    urls = []
+    for source in collected.get("sources", []):
+        for r in source.get("results", []):
+            url = r.get("url", "")
+            if url.startswith("http") and url not in urls:
+                urls.append(url)
+            if len(urls) >= 3:
+                return " ".join(urls)
+    return " ".join(urls)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--thumb-url", help="Cover image URL for WeChat thumb")
@@ -215,6 +228,15 @@ def main():
             break
         if attempt < max_attempts - 1:
             print(f"  word count {last_wc} out of range, retrying...", file=sys.stderr)
+
+    # Ensure the article contains source URLs; inject from collected data if missing
+    if not re.search(r"https?://", article):
+        urls = _extract_source_urls(collected)
+        if urls:
+            article += f"\n\n> 参考来源：{urls}"
+            print(f"Injected source URLs: {urls}")
+        else:
+            print("WARNING: no source URLs found in collected data", file=sys.stderr)
 
     title, body = split_title(article)
     with open(f"output/{date.today()}.md", "w", encoding="utf-8") as f:

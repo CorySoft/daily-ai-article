@@ -51,9 +51,27 @@ def sanitize_scene(desc):
     text = re.sub(r"(代码编辑器|IDE|编辑器界面)", "a desk with ambient monitor glow and no readable glyphs", text)
     text = re.sub(r"(左右对比图|左右对比|对比图)", "a diptych of two material metaphors facing each other", text)
     text = re.sub(r"(流程图|架构图)", "an isometric glowing pipeline of glass and metal", text)
+    text = re.sub(
+        r"(终端|命令行|console|terminal|shell|cmd)",
+        "a glowing surface with no readable glyphs",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"(代码|源码|source code|snippet|代码片段)",
+        "layers of translucent structured material",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"(表格|table|dashboard|仪表盘|统计图|chart|图表)",
+        "an abstract lattice of glowing nodes and bars",
+        text,
+        flags=re.I,
+    )
     if re.search(r"文字|字母|数字|logo|水印", text, re.I):
         text = "wordless material metaphor of the same idea, objects and light only"
-    if len(text) < 8:
+    if len(text) < 15:
         text = "quiet conceptual still life of technology as light and structure"
     return text
 
@@ -66,7 +84,7 @@ def cover_prompt(topic, angle="", language="", kind="daily"):
         else "WeChat banner for a daily technology essay"
     )
     lang = f"Material hint from {language}: color and texture only. " if language else ""
-    return (
+    prompt = (
         f"{NO_TEXT} {subject}. "
         f"Theme: {topic}. {lang}"
         f"Depict: {motif}. "
@@ -74,19 +92,21 @@ def cover_prompt(topic, angle="", language="", kind="daily"):
         "editorial concept art, photoreal materials with subtle sci-fi lighting, "
         "no collage, no infographic, no people faces close-up."
     )
+    return prompt[:500]
 
 
 def article_prompt(desc, topic, index=0):
     scene = sanitize_scene(desc)
     motif = visual_motif(topic, scene)
     look = _SLOT_LOOK[index % len(_SLOT_LOOK)]
-    return (
+    prompt = (
         f"{NO_TEXT} Editorial illustration for a Chinese tech essay about {topic}. "
         f"Scene: {scene}. Echo the motif: {motif}. "
         f"Palette and light: {look}. "
         "16:9, one clear subject, generous negative space, magazine quality, "
         "no diagram, no screenshot, no UI chrome."
     )
+    return prompt[:500]
 
 
 def fit_crop(img, width, height):
@@ -94,6 +114,8 @@ def fit_crop(img, width, height):
     src_w, src_h = img.size
     if src_w == 0 or src_h == 0:
         return img.resize((width, height), Image.LANCZOS)
+    width = max(1, width)
+    height = max(1, height)
     target = width / height
     current = src_w / src_h
     if current > target:

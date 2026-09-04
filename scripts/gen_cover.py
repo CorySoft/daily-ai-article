@@ -15,7 +15,7 @@ import urllib.request
 from datetime import date
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 from io import BytesIO
-from image_style import cover_prompt, fit_crop
+from image_style import cover_prompt, fit_crop, visual_motif
 
 AGNES_API_URL = "https://apihub.agnes-ai.com/v1/images/generations"
 AGNES_MODEL = "agnes-image-2.0-flash"
@@ -69,11 +69,26 @@ def _palette_for(topic, angle, rng):
     return rng.choice(_PALETTES)
 
 
-def render_concept(seed, w, h, topic="", angle=""):
+def render_concept(seed, w, h, topic="", angle="", motif=""):
     rng = random.Random(seed)
     pal = _palette_for(topic, angle, rng)
     ramp = _ramp(pal)
     dim = float(min(w, h))
+
+    # Adjust visual density based on motif keywords
+    blob = motif.lower()
+    if any(k in blob for k in ("flow", "stream", "pipe", "pipeline", "data")):
+        ribbon_density = (6, 10)
+        bokeh_count = (10, 16)
+    elif any(k in blob for k in ("constellation", "orbit", "node", "space")):
+        ribbon_density = (2, 4)
+        bokeh_count = (14, 22)
+    elif any(k in blob for k in ("vault", "sealed", "cathedral", "structure")):
+        ribbon_density = (2, 4)
+        bokeh_count = (6, 10)
+    else:
+        ribbon_density = (3, 6)
+        bokeh_count = (8, 13)
 
     # Organic cloud field: two value-noise octaves averaged + side depth shading
     field = ImageChops.add(
@@ -88,10 +103,10 @@ def render_concept(seed, w, h, topic="", angle=""):
     base.putpalette(ramp)
     base = base.convert("RGBA")
 
-    # Soft glow bokeh: wide blurred translucent orbs + small bright dots
+    # Soft glow bokeh
     ov = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(ov)
-    for _ in range(rng.randint(8, 13)):
+    for _ in range(rng.randint(*bokeh_count)):
         r = int(dim * rng.uniform(0.06, 0.45))
         x = rng.randint(-r, w + r)
         y = rng.randint(-r, h + r)
@@ -111,10 +126,10 @@ def render_concept(seed, w, h, topic="", angle=""):
 
     base = Image.alpha_composite(Image.alpha_composite(base, ov), ov2)
 
-    # Energy-flow ribbons (neural/particle traces)
+    # Energy-flow ribbons
     fov = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     fd = ImageDraw.Draw(fov)
-    for _ in range(rng.randint(3, 6)):
+    for _ in range(rng.randint(*ribbon_density)):
         x = rng.uniform(-w * 0.1, w * 0.3)
         y = rng.uniform(0, h)
         pts = []
@@ -149,12 +164,12 @@ def render_concept(seed, w, h, topic="", angle=""):
 def pil_fallback(topic, angle, out_path):
     """Generate a text-free abstract concept cover using PIL when API is unavailable.
     Layout varies per article (seeded), so consecutive fallback covers are NOT identical."""
-    img = render_concept(_seed_from_article(topic, angle), COVER_W, COVER_H, topic=topic, angle=angle)
+    img = render_concept(_seed_from_article(topic, angle), COVER_W, COVER_H, topic=topic, angle=angle, motif=visual_motif(topic, angle))
     img.save(out_path, "JPEG", quality=85, optimize=True)
     print(f"cover saved (PIL fallback, concept art): {out_path} {img.size}")
 
 
-def agnes_generate(prompt, api_key, size="1024x512", timeout=300, retries=2):
+def agnes_generate(prompt, api_key, size="1024x434", timeout=300, retries=2):
     """Call Agnes Image API, return image bytes or None."""
     body = json.dumps({
         "model": AGNES_MODEL,
@@ -219,7 +234,7 @@ def generate_cover(plan, out_path, kind="daily"):
     prompt = cover_prompt(topic, angle=angle, language=language, kind=kind)
     try:
         print(f"Generating {kind} cover via Agnes Image API...")
-        img_bytes = agnes_generate(prompt, api_key, size="1024x512")
+        img_bytes = agnes_generate(prompt, api_key, size="1024x434")
         if not img_bytes:
             raise RuntimeError("Agnes returned no image")
         size = save_cover_bytes(img_bytes, out_path)

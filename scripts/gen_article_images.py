@@ -16,7 +16,7 @@ from io import BytesIO
 from PIL import Image
 
 from gen_cover import render_concept, agnes_generate
-from image_style import article_prompt, fit_crop
+from image_style import article_prompt, fit_crop, sanitize_scene, visual_motif
 
 IMG_W, IMG_H = 800, 450
 
@@ -85,7 +85,8 @@ def main():
             print(f"  saved: {path}")
         except Exception as e:
             print(f"WARNING: image {i+1} via Agnes failed ({e}); using seeded concept fallback", file=sys.stderr)
-            img = render_concept(seed, IMG_W, IMG_H, topic=topic, angle=slot["desc"])
+            motif = visual_motif(topic, slot["desc"])
+            img = render_concept(seed, IMG_W, IMG_H, topic=topic, angle=slot["desc"], motif=motif)
             img.save(path, "JPEG", quality=85, optimize=True)
             mapping.append({"desc": slot["desc"], "local_path": f"output/{prefix}images/{filename}"})
             print(f"  saved (concept fallback): {path}")

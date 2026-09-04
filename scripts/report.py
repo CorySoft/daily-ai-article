@@ -33,6 +33,8 @@ def main():
     sections = [l for l in md.splitlines() if l.lstrip().startswith("## ")]
     image_slots = len(re.findall(r'^!\[[^\]]*\]$', md, re.MULTILINE))
     has_source = bool(re.search(r"https?://", md))
+    if not has_source:
+        has_source = bool(re.search(r"https?://", content))
     has_pending = "IMAGESLOT_PENDING" in content
     thumb_ok = bool(thumb) and "$IMG_COMMIT" not in thumb
 
