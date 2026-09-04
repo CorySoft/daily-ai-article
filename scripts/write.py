@@ -57,8 +57,8 @@ def _inline_md(text):
     return text
 
 _HEADING_STYLE = {
-    1: 'background:#0F4C81;color:#fff;border-radius:8px;font-size:22px;display:table;margin:4em auto 2em;padding:14px 20px;font-weight:bold;',
-    2: 'font-size:20px;color:#0F4C81;font-weight:bold;margin:24px 0 12px;padding-left:12px;border-left:4px solid #55C9EA;',
+    1: 'background:#0F4C81;color:#fff;border-radius:8px;font-size:22px;display:table;margin:2em auto 1.5em;padding:8px 20px;font-weight:bold;',
+    2: 'background:#0F4C81;color:#fff;border-radius:6px;font-size:18px;padding:8px 15px;margin:1.5em 0 1em;font-weight:bold;',
     3: 'font-size:17px;color:#0F4C81;font-weight:bold;margin:18px 0 8px;',
 }
 
@@ -97,7 +97,7 @@ def markdown_to_html(md):
             alt = m.group(1).replace("配图描述：", "").strip()
             html_lines.append(
                 f'<figure style="margin:20px 0;text-align:center;">'
-                f'<img src="IMAGESLOT_PENDING" data-desc="{alt}" style="width:100%;border-radius:8px;"/>'
+                f'<img src="IMAGESLOT_PENDING" data-desc="{alt}" style="width:100%;border-radius:6px;margin:15px 0;display:block;"/>'
                 f'</figure>'
             )
             continue
@@ -159,7 +159,7 @@ def markdown_to_html(md):
         # Paragraph
         else:
             html_lines.append(
-                f'<p style="margin:12px 0;line-height:1.9;font-size:16px;color:#333;text-align:justify;">'
+                f'<p style="margin:0 0 20px;line-height:1.8;color:#3a3a3a;">'
                 f'{_inline_md(line)}</p>'
             )
 
