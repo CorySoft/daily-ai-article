@@ -1,9 +1,34 @@
 [
-  {"full_name": "yt-dlp/yt-dlp", "date": "2026-08-27"},
-  {"full_name": "ollama/ollama", "date": "2026-08-28"},
-  {"full_name": "521xueweihan/HelloGitHub", "date": "2026-08-29"},
-  {"full_name": "farion1231/cc-switch", "date": "2026-08-30"},
-  {"full_name": "nodejs/node", "date": "2026-09-01"},
-  {"full_name": "public-apis/public-apis", "date": "2026-09-02"},
-  {"full_name": "Snailclimb/JavaGuide", "date": "2026-09-03"}
+  {
+    "full_name": "yt-dlp/yt-dlp",
+    "date": "2026-08-27"
+  },
+  {
+    "full_name": "ollama/ollama",
+    "date": "2026-08-28"
+  },
+  {
+    "full_name": "521xueweihan/HelloGitHub",
+    "date": "2026-08-29"
+  },
+  {
+    "full_name": "farion1231/cc-switch",
+    "date": "2026-08-30"
+  },
+  {
+    "full_name": "nodejs/node",
+    "date": "2026-09-01"
+  },
+  {
+    "full_name": "public-apis/public-apis",
+    "date": "2026-09-02"
+  },
+  {
+    "full_name": "Snailclimb/JavaGuide",
+    "date": "2026-09-03"
+  },
+  {
+    "full_name": "aaronyi97/image-story-video-wizard",
+    "date": "2026-09-04"
+  }
 ]
