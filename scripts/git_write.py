@@ -28,7 +28,7 @@ WRITE_PROMPT = """你是资深公众号「开源精选」专栏作者。根据�
 - 结构：一句话导语 → 项目简介 → 核心特性 → 快速上手 → 技术亮点分析 → 适用场景与展望
 - 目标读者：技术从业者、开源爱好者
 - 风格：专业、清晰、有感染力
-- 篇幅：**全文严格控制在 2400~3000 字**
+- 篇幅：**全文严格控制在 2400~3200 字**（宁少勿多，超过 3400 字即判失败）
 - 提供增量价值：技术分析、对比评价、使用建议
 
 【排版要求】
@@ -69,11 +69,11 @@ def main():
     for attempt in range(max_attempts):
         prompt = base_prompt
         if attempt > 0:
-            prompt += f"\n\n【上次生成不合格】上次全文 {last_wc} 字。请压缩到 2400~3000 字，保留所有小标题和排版标记。"
+            prompt += f"\n\n【上次生成不合格】上次全文 {last_wc} 字。请压缩到 2400~3200 字，保留所有小标题和排版标记。"
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         last_wc = wc(article)
         print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
-        if 1800 <= last_wc <= 3200:
+        if 1800 <= last_wc <= 3400:
             break
         if attempt < max_attempts - 1:
             print(f"  word count {last_wc} out of range, retrying...")

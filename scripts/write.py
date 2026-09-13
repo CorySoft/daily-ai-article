@@ -26,7 +26,7 @@ WRITE_PROMPT = """你是资深公众号作者。根据选题策划，写一篇�
 - 结构：悬念导语 → 背景 → 核心章节(4~6) → 案例/数据/对比 → 读者影响 → 独立分析 → 有力结尾
 - 目标读者：普通大众、科技与 AI 从业者
 - 风格：专业、清晰、有观点
-- 篇幅：**全文严格控制在 2400~3000 字**（宁少勿多，超过 3200 字即判失败）
+- 篇幅：**全文严格控制在 2400~3200 字**（宁少勿多，超过 3400 字即判失败）
 - 提供增量价值：交叉分析/因果解释/影响分析/可执行建议/易忽略问题/有依据的趋势判断
 
 【排版要求】（重要，必须遵守）
@@ -51,7 +51,7 @@ def split_title(article):
 
 def is_complete(text):
     """True if the article was not truncated by max_tokens.
-    A complete 2400~3000-char essay ends with sentence punctuation and has >=3 ## sections.
+    A complete 2400~3200-char essay ends with sentence punctuation and has >=3 ## sections.
     """
     t = text.rstrip()
     ends_ok = t.endswith(("。", "！", "？", "。”", "！”", "？”", "》", "）", ".", "。\n"))
@@ -230,11 +230,11 @@ def main():
     for attempt in range(max_attempts):
         prompt = base_prompt
         if attempt > 0:
-            prompt += f"\n\n【上次生成不合格，请修正】上次全文为 {last_wc} 字（含标题行）。必须把正文压缩到 2400~3000 字，删除冗余段落，保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位。"
+            prompt += f"\n\n【上次生成不合格，请修正】上次全文为 {last_wc} 字（含标题行）。必须把正文压缩到 2400~3200 字，删除冗余段落，保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位。"
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         last_wc = wc(article)
         print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
-        if 1800 <= last_wc <= 3000 and is_complete(article):
+        if 1800 <= last_wc <= 3400 and is_complete(article):
             break
         if attempt < max_attempts - 1:
             print(f"  word count {last_wc} out of range or truncated, retrying...", file=sys.stderr)

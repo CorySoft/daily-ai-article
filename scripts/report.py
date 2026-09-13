@@ -39,7 +39,7 @@ def main():
     thumb_ok = bool(thumb) and "$IMG_COMMIT" not in thumb
 
     checks = [
-        ("字数 1800~3000", 1800 <= wc <= 3000),
+        ("字数 1800~3400", 1800 <= wc <= 3400),
         ("有标题", bool(title)),
         ("章节 >= 3", len(sections) >= 3),
         ("正文含来源 URL", has_source),
