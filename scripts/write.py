@@ -48,6 +48,16 @@ def split_title(article):
         return lines[0].lstrip().lstrip("#").strip(), "\n".join(lines[1:]).strip()
     return date.today().isoformat(), article
 
+
+def is_complete(text):
+    """True if the article was not truncated by max_tokens.
+    A complete 2400~3000-char essay ends with sentence punctuation and has >=3 ## sections.
+    """
+    t = text.rstrip()
+    ends_ok = t.endswith(("。", "！", "？", "。”", "！”", "？”", "》", "）", ".", "。\n"))
+    has_sections = len(re.findall(r"^## ", text, re.MULTILINE)) >= 3
+    return bool(ends_ok) and has_sections
+
 def _inline_md(text):
     """Convert inline markdown (bold, italic, code, links) to HTML."""
     text = re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#0F4C81;font-weight:bold;">\1</strong>', text)
@@ -221,13 +231,13 @@ def main():
         prompt = base_prompt
         if attempt > 0:
             prompt += f"\n\n【上次生成不合格，请修正】上次全文为 {last_wc} 字（含标题行）。必须把正文压缩到 2400~3000 字，删除冗余段落，保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位。"
-        article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=4096).strip()
+        article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         last_wc = wc(article)
         print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
-        if 1800 <= last_wc <= 3000:
+        if 1800 <= last_wc <= 3000 and is_complete(article):
             break
         if attempt < max_attempts - 1:
-            print(f"  word count {last_wc} out of range, retrying...", file=sys.stderr)
+            print(f"  word count {last_wc} out of range or truncated, retrying...", file=sys.stderr)
 
     # Ensure the article contains source URLs; inject from collected data if missing
     if not re.search(r"https?://", article):

@@ -2,7 +2,7 @@ import json
 import unittest
 
 from util import slim_collected, word_count
-from write import markdown_to_html
+from write import markdown_to_html, is_complete
 from git_search import pick_repo, load_featured
 from image_style import article_prompt, cover_prompt, fit_crop, sanitize_scene, visual_motif
 
@@ -93,6 +93,20 @@ class ImageStyleTest(unittest.TestCase):
         src = Image.new("RGB", (1200, 400), (10, 20, 30))
         out = fit_crop(src, 900, 383)
         self.assertEqual(out.size, (900, 383))
+
+
+class IsCompleteTest(unittest.TestCase):
+    def test_complete_article(self):
+        md = "# 标题\n\n## 章节1\n内容\n## 章节2\n内容\n## 章节3\n结尾。"
+        self.assertTrue(is_complete(md))
+
+    def test_truncated_missing_sections(self):
+        md = "# 标题\n\n## 章节1\n内容\n结尾。"
+        self.assertFalse(is_complete(md))
+
+    def test_truncated_no_ending_punctuation(self):
+        md = "# 标题\n\n## 章节1\n内容\n## 章节2\n内容\n## 章节3\n内容被截断"
+        self.assertFalse(is_complete(md))
 
 
 if __name__ == "__main__":

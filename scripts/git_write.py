@@ -70,10 +70,10 @@ def main():
         prompt = base_prompt
         if attempt > 0:
             prompt += f"\n\n【上次生成不合格】上次全文 {last_wc} 字。请压缩到 2400~3000 字，保留所有小标题和排版标记。"
-        article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=4096).strip()
+        article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         last_wc = wc(article)
         print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
-        if 1800 <= last_wc <= 3000:
+        if 1800 <= last_wc <= 3200:
             break
         if attempt < max_attempts - 1:
             print(f"  word count {last_wc} out of range, retrying...")

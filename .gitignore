@@ -5,7 +5,7 @@ __pycache__/
 output/collected.json
 output/plan.json
 output/report.json
-output/article_*.json
+output/article.json
 output/images_map.json
 output/images_meta.json
 output/images/

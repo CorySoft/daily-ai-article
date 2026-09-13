@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import time
 import urllib.request
 
@@ -9,6 +10,12 @@ def get_config():
         "model": os.environ.get("LLM_MODEL", "ep-20260810143613-s56fs"),
         "base_url": os.environ.get("LLM_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
     }
+
+def _is_rate_limited(err):
+    """True if the error is an HTTP 429 (rate limit)."""
+    import urllib.error
+    return isinstance(err, urllib.error.HTTPError) and getattr(err, "code", None) == 429
+
 
 def chat(messages, temperature=0.7, max_tokens=3000, retries=3):
     cfg = get_config()
@@ -40,9 +47,13 @@ def chat(messages, temperature=0.7, max_tokens=3000, retries=3):
         except Exception as e:
             last_err = e
             if attempt < retries - 1:
-                wait = 10 * (attempt + 1)
+                # 429 限流退避更久（指数 + 抖动）；其它瞬时错误用较短等待
+                if _is_rate_limited(e):
+                    wait = 30 * (attempt + 1) + random.uniform(0, 10)
+                else:
+                    wait = 10 * (attempt + 1)
                 print(f"  LLM 调用失败 (attempt {attempt+1}/{retries}): {e}")
-                print(f"  {wait}s 后重试...")
+                print(f"  {wait:.0f}s 后重试...")
                 time.sleep(wait)
     raise last_err
 
@@ -104,7 +115,9 @@ def chat_json(messages, temperature=0.7, max_tokens=8192, retries=3):
                 msgs.append({"role": "user", "content": "请重新输出一个完整合法的 JSON。"})
         # Vary temperature per attempt to avoid identical broken outputs
         temp = min(temperature + attempt * 0.15, 1.2)
-        text = chat(msgs, temperature=temp, max_tokens=max_tokens)
+        # 内层不重试：JSON 修复失败是内容问题而非网络问题，重试由外层 attempt 负责，
+        # 避免 3(chat_json) x 3(chat) = 9 次调用叠加限流阻塞。
+        text = chat(msgs, temperature=temp, max_tokens=max_tokens, retries=1)
         text = _clean_content(text)
 
         candidates = _extract_json_candidates(text)
@@ -115,16 +128,13 @@ def chat_json(messages, temperature=0.7, max_tokens=8192, retries=3):
         print(f"  JSON 候选: {len(candidates)} 块 (attempt {attempt+1}/{retries})")
 
         for candidate in candidates:
-            for label, candidate in [("raw", candidate), ("repaired", _repair_json(candidate))]:
-                try:
-                    return json.loads(candidate, strict=False)
-                except json.JSONDecodeError as e:
-                    print(f"  JSON 解析失败 ({label}): {e}")
-                try:
-                    fixed = re.sub(r'[\x00-\x1f](?=[^"]*")', ' ', candidate)
-                    return json.loads(fixed, strict=False)
-                except json.JSONDecodeError as e:
-                    print(f"  JSON 修复解析失败 ({label}): {e}")
+            repaired = _repair_json(candidate)
+            for label, cand in [("raw", candidate), ("repaired", repaired)]:
+                for variant in (cand, re.sub(r'[\x00-\x1f](?=[^"]*")', ' ', cand)):
+                    try:
+                        return json.loads(variant, strict=False)
+                    except json.JSONDecodeError as e:
+                        print(f"  JSON 解析失败 ({label}): {e}")
         if attempt < retries - 1:
             print(f"  JSON 解析全部失败 (attempt {attempt+1}/{retries}), 重试...")
             continue

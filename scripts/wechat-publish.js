@@ -3,7 +3,7 @@
 // 依赖：Node.js 12+（内置 crypto / http / https，无任何 npm 包）
 //
 // 用法：
-//   node client/wechat-publish.js [选项]
+//   node scripts/wechat-publish.js [选项]
 //
 // 选项：
 //   --config <path>    配置文件（默认 client/client_config.json，存在则加载）
