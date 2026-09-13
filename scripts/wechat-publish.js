@@ -217,6 +217,42 @@ function responseHasError(body) {
   return false;
 }
 
+// ---- Byethost 反爬门禁破解 ----
+// Byethost 免费空间在 openresty 前挡了一层 JS 门禁：返回
+//   <script src="/aes.js"></script>
+//   var a=toNumbers("..."),b=toNumbers("..."),c=toNumbers("...");
+//   document.cookie="__test="+toHex(slowAES.decrypt(c,2,a,b))+"; ..." ; location.href="?i=1"
+// 其中 slowAES.decrypt(c,2,a,b) = AES-128-CBC(密文c, 密钥a, IV b, 无填充)。
+// 客户端无法执行 JS，这里用 Node crypto 直接解密出 __test 并作为 cookie 重试即可绕过。
+function isByethostGate(body) {
+  return typeof body === 'string'
+    && body.includes('slowAES')
+    && body.includes('toNumbers')
+    && body.includes('__test');
+}
+
+function solveByethostCookie(body) {
+  const m = String(body).match(
+    /\ba=toNumbers\("([0-9a-f]{32})"\),b=toNumbers\("([0-9a-f]{32})"\),c=toNumbers\("([0-9a-f]+)"\)/
+  );
+  if (!m) return null;
+  try {
+    const decipher = crypto.createDecipheriv(
+      'aes-128-cbc',
+      Buffer.from(m[1], 'hex'),
+      Buffer.from(m[2], 'hex')
+    );
+    decipher.setAutoPadding(false);
+    const token = Buffer.concat([
+      decipher.update(Buffer.from(m[3], 'hex')),
+      decipher.final(),
+    ]).toString('hex');
+    return '__test=' + token;
+  } catch (e) {
+    return null;
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -241,6 +277,16 @@ function sleep(ms) {
     lastBody = resp.body;
     if (attempt > 1) {
       console.log(`[retry ${attempt - 1}/${MAX_ATTEMPTS - 1}] 服务器仍返回错误，稍后重试...`);
+    }
+    // Byethost 反爬门禁：解密 __test 并带上重试（不消耗重试次数）
+    if (isByethostGate(resp.body)) {
+      const gateCookie = solveByethostCookie(resp.body);
+      if (gateCookie) {
+        cookie = gateCookie;
+        console.log('Byethost 门禁已解锁，携带 __test cookie 重试...');
+        attempt = 0;
+        continue;
+      }
     }
     if (!responseHasError(resp.body)) {
       console.log(resp.body);
