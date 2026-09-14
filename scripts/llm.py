@@ -7,8 +7,8 @@ import urllib.request
 def get_config():
     return {
         "api_key": os.environ.get("LLM_API_KEY"),
-        "model": os.environ.get("LLM_MODEL", "ep-20260810143613-s56fs"),
-        "base_url": os.environ.get("LLM_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+        "model": os.environ.get("LLM_MODEL", "agnes-3.0-flash"),
+        "base_url": os.environ.get("LLM_BASE_URL", "https://apihub.agnes-ai.com/v1"),
     }
 
 def _is_rate_limited(err):

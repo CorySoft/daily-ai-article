@@ -103,7 +103,7 @@ def free_arxiv(query="artificial intelligence", count=10):
         "search_query": f"all:{query}", "start": 0,
         "max_results": count, "sortBy": "submittedDate", "sortOrder": "descending",
     })
-    url = f"http://export.arxiv.org/api/query?{params}"
+    url = f"https://export.arxiv.org/api/query?{params}"
     req = urllib.request.Request(url)
     with urllib.request.urlopen(req, timeout=15) as r:
         xml = r.read().decode("utf-8")

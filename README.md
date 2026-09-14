@@ -53,8 +53,8 @@ S8 wechat-publish.js --file output/git_article.json
 
 ### Variables
 
-- `LLM_BASE_URL`：`https://ark.cn-beijing.volces.com/api/v3`
-- `LLM_MODEL`：火山方舟接入点 ID
+- `LLM_BASE_URL`：`https://apihub.agnes-ai.com/v1`（生产在 Actions Variables 注入）
+- `LLM_MODEL`：`agnes-3.0-flash`（生产在 Actions Variables 注入）
 - `SEARCH_TOPICS`：检索主题，用 `|` 分隔
 - `ARTICLE_AUTHOR`：作者名
 - `ARTICLE_DIGEST`：摘要（可空）

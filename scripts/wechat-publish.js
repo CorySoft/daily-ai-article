@@ -6,7 +6,7 @@
 //   node scripts/wechat-publish.js [选项]
 //
 // 选项：
-//   --config <path>    配置文件（默认 client/client_config.json，存在则加载）
+//   --config <path>    配置文件（默认 scripts/client_config.json，存在则加载）
 //   --server <url>     中转服务器地址，如 https://your-host
 //   --secret <str>     共享密钥（与服务器 config.php 一致）
 //   --appid <str>      微信公众号 AppID
@@ -19,7 +19,7 @@
 // 阿贝云调试域名自动解锁：若服务器返回门禁页（系统域名_网站调试域名），
 // 且配置了 unlock_password，则自动调用解锁接口获取令牌并写 cookie 后重试一次。
 //
-// 请求体也可从 stdin 传入：echo '{"count":5}' | node client/wechat-publish.js --endpoint /draft/list
+// 请求体也可从 stdin 传入：echo '{"count":5}' | node scripts/wechat-publish.js --endpoint /draft/list
 //
 // 凭证加密：AES-256-CBC + HMAC-SHA256（密钥 = sha256(shared_secret)），
 // 格式 v1:<iv_hex>:<mac_hex>:<ciphertext_base64>，服务器临时解密、不落盘。

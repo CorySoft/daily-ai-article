@@ -4,14 +4,12 @@ __pycache__/
 # 生成物中仅保留当日文章 .md 和封面图，忽略临时/敏感文件
 output/collected.json
 output/plan.json
-output/report.json
 output/article.json
 output/images_map.json
 output/images_meta.json
 output/images/
 output/git_collected.json
 output/git_plan.json
-output/git_report.json
 output/git_images_map.json
 output/git_images_meta.json
 output/git_images/
