@@ -172,7 +172,10 @@ function unlockDebugDomain(hostname) {
   });
 }
 
-// 发送一次请求，返回 { statusCode, body }，网络错误 reject
+// 发送一次请求，返回 { statusCode, body }，网络错误/超时 reject。
+// 带 socket 超时：超过 REQUEST_TIMEOUT_MS 无数据即 destroy 并 reject，
+// 防止 Byethost 这类慢主机一次挂住整个 run（且由主循环重试，不会直接致命）。
+const REQUEST_TIMEOUT_MS = 120000;
 function sendRequest(cookieHeader) {
   return new Promise((resolve, reject) => {
     const headers = {
@@ -192,12 +195,24 @@ function sendRequest(cookieHeader) {
     if (url.port) {
       reqOpts.port = Number(url.port);
     }
+    // 防 promise 二次 settle：timeout/error/end/aborted 多路径只认第一次
+    let settled = false;
+    const once = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      fn(val);
+    };
     const req = transport.request(reqOpts, (res) => {
       let out = '';
       res.on('data', (c) => { out += c; });
-      res.on('end', () => { resolve({ statusCode: res.statusCode, body: out }); });
+      res.on('end', () => { once(resolve, { statusCode: res.statusCode, body: out }); });
+      res.on('aborted', () => once(reject, new Error('响应被服务端中断 (aborted)')));
+      res.on('error', (e) => once(reject, e));
     });
-    req.on('error', reject);
+    req.on('error', (e) => once(reject, e));
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      req.destroy(new Error(`请求超时（${REQUEST_TIMEOUT_MS / 1000}s 无数据），已中止`));
+    });
     req.write(body);
     req.end();
   });
@@ -268,37 +283,67 @@ function sleep(ms) {
     }
   }
 
-  // 瞬时错误（如 CDN 下载超时）自动重试，最多 3 次
+  // 网络/服务器瞬时错误自动重试，最多 3 次；
+  // Byethost 门禁解锁不消耗重试次数，但总次数受限，防止空转。
   const MAX_ATTEMPTS = 3;
+  const MAX_GATE_SOLVES = 3;
   let lastBody = '';
-  let resp;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    resp = await sendRequest(cookie);
+  let lastNetworkError = null;
+  let gateSolves = 0;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; ) {
+    let resp;
+    try {
+      resp = await sendRequest(cookie);
+    } catch (e) {
+      // 网络错误（超时/断连/解析失败）也进重试，而不是直接 exit：
+      // 避免慢主机"慢但成功"被误杀成"必失败"
+      lastNetworkError = e;
+      console.log(`[网络错误 attempt ${attempt}/${MAX_ATTEMPTS}] ${e.message}`);
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(3000);
+      }
+      attempt++;
+      continue;
+    }
     lastBody = resp.body;
     if (attempt > 1) {
       console.log(`[retry ${attempt - 1}/${MAX_ATTEMPTS - 1}] 服务器仍返回错误，稍后重试...`);
     }
-    // Byethost 反爬门禁：解密 __test 并带上重试（不消耗重试次数）
+    // Byethost 反爬门禁：解密 __test 并带上重试（不消耗重试次数，但总次数受限）
     if (isByethostGate(resp.body)) {
       const gateCookie = solveByethostCookie(resp.body);
       if (gateCookie) {
         cookie = gateCookie;
-        console.log('Byethost 门禁已解锁，携带 __test cookie 重试...');
-        attempt = 0;
+        gateSolves++;
+        console.log(`Byethost 门禁已解锁（${Math.min(gateSolves, MAX_GATE_SOLVES)}/${MAX_GATE_SOLVES}），携带 __test cookie 重试...`);
+        if (gateSolves > MAX_GATE_SOLVES) {
+          console.error(`Byethost 门禁尝试 ${gateSolves} 次仍未通过，放弃。`);
+          console.log(resp.body);
+          process.exit(1);
+        }
+        attempt = 0; // 门禁成功不计入重试次数
         continue;
       }
+      console.log('Byethost 门禁出现但无法解出 __test，按普通错误重试...');
     }
     if (!responseHasError(resp.body)) {
       console.log(resp.body);
       return;
     }
+    attempt++;
     if (attempt < MAX_ATTEMPTS) {
       await sleep(3000);
     }
   }
 
-  // 重试耗尽：打印最后一次响应，并以非零码退出，避免“静默成功”掩盖失败
-  console.log(lastBody);
+  // 重试耗尽：打印最后一次响应（或网络错误），并以非零码退出，避免"静默成功"掩盖失败
+  if (lastBody) {
+    console.log(lastBody);
+  }
+  if (lastNetworkError) {
+    console.error(`网络错误重试耗尽: ${lastNetworkError.message}`);
+  }
   process.exit(1);
 })().catch((e) => {
   console.error(`请求失败: ${e.message}`);
