@@ -6,6 +6,7 @@ import sys
 from datetime import date
 import llm
 from util import slim_collected, word_count as wc
+from util import ACCEPT_WORD_MIN, ACCEPT_WORD_MAX, is_complete
 
 WRITE_PROMPT = """你是资深公众号作者。根据选题策划，写一篇原创中文公众号文章。
 
@@ -47,16 +48,6 @@ def split_title(article):
     if lines and lines[0].lstrip().startswith("#"):
         return lines[0].lstrip().lstrip("#").strip(), "\n".join(lines[1:]).strip()
     return date.today().isoformat(), article
-
-
-def is_complete(text):
-    """True if the article was not truncated by max_tokens.
-    A complete 2400~3200-char essay ends with sentence punctuation and has >=3 ## sections.
-    """
-    t = text.rstrip()
-    ends_ok = t.endswith(("。", "！", "？", "。”", "！”", "？”", "》", "）", ".", "。\n"))
-    has_sections = len(re.findall(r"^## ", text, re.MULTILINE)) >= 3
-    return bool(ends_ok) and has_sections
 
 def _escape_html(text):
     """Escape HTML metacharacters in model output before it enters the draft HTML."""
@@ -253,10 +244,18 @@ def main():
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         last_wc = wc(article)
         print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
-        if 1800 <= last_wc <= 3400 and is_complete(article):
+        if ACCEPT_WORD_MIN <= last_wc <= ACCEPT_WORD_MAX and is_complete(article):
             break
         if attempt < max_attempts - 1:
             print(f"  word count {last_wc} out of range or truncated, retrying...", file=sys.stderr)
+
+    # fail-fast: 3 次仍不达标则终止流水线，避免白烧 S4/S5 的生图 API
+    if not (ACCEPT_WORD_MIN <= last_wc <= ACCEPT_WORD_MAX and is_complete(article)):
+        print(
+            f"ERROR: 3 attempts, word count {last_wc} outside {ACCEPT_WORD_MIN}~{ACCEPT_WORD_MAX} or truncated, aborting",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Ensure the article contains source URLs; inject from collected data if missing
     if not re.search(r"https?://", article):

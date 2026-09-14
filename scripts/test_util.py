@@ -1,8 +1,9 @@
 import json
 import unittest
 
-from util import slim_collected, word_count
-from write import markdown_to_html, is_complete
+import llm
+from util import slim_collected, word_count, is_complete
+from write import markdown_to_html
 from llm import _clean_content
 from git_search import pick_repo, load_featured
 from image_style import article_prompt, cover_prompt, fit_crop, sanitize_scene, visual_motif
@@ -109,6 +110,10 @@ class IsCompleteTest(unittest.TestCase):
         md = "# 标题\n\n## 章节1\n内容\n## 章节2\n内容\n## 章节3\n内容被截断"
         self.assertFalse(is_complete(md))
 
+    def test_url_ending_is_complete(self):
+        md = "# 标题\n\n## 章节1\n内容\n## 章节2\n内容\n## 章节3\n结尾一段。\n\n🔗 GitHub: https://github.com/a/b"
+        self.assertTrue(is_complete(md))
+
 
 class CleanContentTest(unittest.TestCase):
     def test_strips_thinking_tag(self):
@@ -119,6 +124,32 @@ class CleanContentTest(unittest.TestCase):
 
     def test_keeps_plain_text_unchanged(self):
         self.assertEqual(_clean_content("正常文本 thinking response 保留"), "正常文本 thinking response 保留")
+
+
+class ChatJsonRepairTest(unittest.TestCase):
+    def test_repair_trailing_comma(self):
+        self.assertEqual(llm._repair_json("{\"a\": 1, \"b\": 2,}"), "{\"a\": 1, \"b\": 2}")
+
+    def test_repair_missing_comma(self):
+        repaired = llm._repair_json("{\"a\": 1\n\"b\": 2}")
+        self.assertIn("\"a\": 1,", repaired)
+
+    def test_extract_balanced_candidates(self):
+        cands = llm._extract_json_candidates('噪声{"a":1}尾巴{"c":2}')
+        self.assertEqual(len(cands), 2)
+        self.assertEqual(cands[0], '{"a":1}')
+        self.assertEqual(cands[1], '{"c":2}')
+
+    def test_chat_json_recovers_broken_output(self):
+        def fake_chat(messages, **kw):
+            return 'noise\n{"a": 1, "b": 2,}'
+
+        orig = llm.chat
+        llm.chat = fake_chat
+        try:
+            self.assertEqual(llm.chat_json([{"role": "user", "content": "x"}], retries=1), {"a": 1, "b": 2})
+        finally:
+            llm.chat = orig
 
 
 class InjectSafetyTest(unittest.TestCase):

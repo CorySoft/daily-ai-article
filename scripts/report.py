@@ -4,7 +4,7 @@ import re
 import sys
 from datetime import date
 
-from util import word_count
+from util import word_count, ACCEPT_WORD_MIN, ACCEPT_WORD_MAX
 
 
 def main():
@@ -39,7 +39,7 @@ def main():
     thumb_ok = bool(thumb) and "$IMG_COMMIT" not in thumb
 
     checks = [
-        ("字数 1800~3400", 1800 <= wc <= 3400),
+        (f"字数 {ACCEPT_WORD_MIN}~{ACCEPT_WORD_MAX}", ACCEPT_WORD_MIN <= wc <= ACCEPT_WORD_MAX),
         ("有标题", bool(title)),
         ("章节 >= 3", len(sections) >= 3),
         ("正文含来源 URL", has_source),

@@ -8,12 +8,12 @@
 
 两条流水线共用并发组 `article-pipeline`（排队执行，互不取消），产物目录隔离。
 
-### 日更（`daily.yml`，每天 08:00 UTC / 16:00 北京时间）
+### 日更（`daily.yml`，每天 00:00 UTC / 08:00 北京时间）
 
 ```
 S1 search.py              Brave + HN/TechCrunch/ArXiv，精读正文 → output/collected.json
 S2 plan.py                LLM 选题策划 → output/plan.json
-S3 write.py               原创撰写 1800~3000 字 → output/YYYY-MM-DD.md + article.json
+S3 write.py               原创撰写 1800~3400 字（目标 2400~3200）→ output/YYYY-MM-DD.md + article.json
 S4 gen_cover.py           Agnes 封面（失败则程序化概念图） → output/cover.jpg
 S5 gen_article_images.py  文内配图 → output/images/
 S6 fill_article.py        写入 jsDelivr CDN URL + thumb_url
@@ -21,7 +21,7 @@ S7 report.py              字数/章节/出处/配图/封面验收
 S8 wechat-publish.js      存微信草稿箱
 ```
 
-### 开源精选（`git-repo-daily.yml`，每天 09:00 UTC / 17:00 北京时间）
+### 开源精选（`git-repo-daily.yml`，每天 01:00 UTC / 09:00 北京时间）
 
 ```
 S1 git_search.py                 搜 GitHub，跳过已写过仓库 → output/git_collected.json
@@ -48,6 +48,8 @@ S8 wechat-publish.js --file output/git_article.json
 - `WX_SHARED_SECRET`：与中转服务 shared_secret 一致
 - `WX_APPID` / `WX_APPSECRET`：公众号凭证
 - `WX_UNLOCK_PASSWORD`：阿贝云调试域名门禁（可空）
+- `NOTIFY_WEBHOOK`:流水线失败时 POST 下方 JSON 的 webhook（可空，未配置则跳过通知）
+  `{"text": "...", "workflow": "...", "run": "<actions/run-url>"}`
 
 ### Variables
 

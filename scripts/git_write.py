@@ -10,6 +10,7 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(__file__))
 import llm
 from util import word_count as wc
+from util import ACCEPT_WORD_MIN, ACCEPT_WORD_MAX, is_complete
 from write import markdown_to_html, extract_image_slots
 
 WRITE_PROMPT = """你是资深公众号「开源精选」专栏作者。根据以下开源项目分析，写一篇推荐文章。
@@ -73,10 +74,18 @@ def main():
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         last_wc = wc(article)
         print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
-        if 1800 <= last_wc <= 3400:
+        if ACCEPT_WORD_MIN <= last_wc <= ACCEPT_WORD_MAX and is_complete(article):
             break
         if attempt < max_attempts - 1:
-            print(f"  word count {last_wc} out of range, retrying...")
+            print(f"  word count {last_wc} out of range or truncated, retrying...")
+
+    # fail-fast: 3 次仍不达标则终止流水线，避免白烧 S4/S5 的生图 API
+    if not (ACCEPT_WORD_MIN <= last_wc <= ACCEPT_WORD_MAX and is_complete(article)):
+        print(
+            f"ERROR: 3 attempts, word count {last_wc} outside {ACCEPT_WORD_MIN}~{ACCEPT_WORD_MAX} or truncated, aborting",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Split title
     lines = article.splitlines()
