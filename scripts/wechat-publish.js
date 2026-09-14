@@ -319,8 +319,9 @@ function sleep(ms) {
         console.log(`Byethost 门禁已解锁（${Math.min(gateSolves, MAX_GATE_SOLVES)}/${MAX_GATE_SOLVES}），携带 __test cookie 重试...`);
         if (gateSolves > MAX_GATE_SOLVES) {
           console.error(`Byethost 门禁尝试 ${gateSolves} 次仍未通过，放弃。`);
-          console.log(resp.body);
-          process.exit(1);
+          console.error(`[最后一次响应] ${resp.body}`);
+          process.exitCode = 1;
+          break;
         }
         attempt = 0; // 门禁成功不计入重试次数
         continue;
@@ -337,15 +338,16 @@ function sleep(ms) {
     }
   }
 
-  // 重试耗尽：打印最后一次响应（或网络错误），并以非零码退出，避免"静默成功"掩盖失败
+  // 重试耗尽：最后一次响应的 body 含失败明细，必须打 stderr（同步、必被采集）。
+  // 不用 process.exit()——它会截断未刷新的异步 stdout，导致诊断日志丢失。
   if (lastBody) {
-    console.log(lastBody);
+    console.error(`[最后一次响应] ${lastBody}`);
   }
   if (lastNetworkError) {
     console.error(`网络错误重试耗尽: ${lastNetworkError.message}`);
   }
-  process.exit(1);
+  process.exitCode = 1;
 })().catch((e) => {
   console.error(`请求失败: ${e.message}`);
-  process.exit(1);
+  process.exitCode = 1;
 });
