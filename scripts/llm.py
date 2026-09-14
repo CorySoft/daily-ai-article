@@ -39,7 +39,7 @@ def chat(messages, temperature=0.7, max_tokens=3000, retries=3):
                     "User-Agent": "Mozilla/5.0 DailyAI/1.0",
                 },
             )
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=300) as r:
                 resp = json.loads(r.read().decode("utf-8"))
             msg = resp["choices"][0]["message"]
             content = msg.get("content") or msg.get("reasoning_content") or ""
