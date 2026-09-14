@@ -288,6 +288,7 @@ function sleep(ms) {
   const MAX_ATTEMPTS = 3;
   const MAX_GATE_SOLVES = 3;
   let lastBody = '';
+  let lastStatus = null;
   let lastNetworkError = null;
   let gateSolves = 0;
 
@@ -307,6 +308,7 @@ function sleep(ms) {
       continue;
     }
     lastBody = resp.body;
+    lastStatus = resp.statusCode;
     if (attempt > 1) {
       console.log(`[retry ${attempt - 1}/${MAX_ATTEMPTS - 1}] 服务器仍返回错误，稍后重试...`);
     }
@@ -338,10 +340,12 @@ function sleep(ms) {
     }
   }
 
-  // 重试耗尽：最后一次响应的 body 含失败明细，必须打 stderr（同步、必被采集）。
+  // 重试耗尽：最后一次响应的 HTTP 码与 body 是排查关键，必须打 stderr（同步、必被采集）。
   // 不用 process.exit()——它会截断未刷新的异步 stdout，导致诊断日志丢失。
-  if (lastBody) {
-    console.error(`[最后一次响应] ${lastBody}`);
+  if (lastStatus !== null) {
+    console.error(
+      `[最后一次响应] HTTP ${lastStatus}, body: ${lastBody ? lastBody : '(empty)'}`
+    );
   }
   if (lastNetworkError) {
     console.error(`网络错误重试耗尽: ${lastNetworkError.message}`);
