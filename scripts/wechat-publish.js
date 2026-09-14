@@ -186,9 +186,12 @@ function sendRequest(cookieHeader) {
     if (cookieHeader) {
       headers['Cookie'] = cookieHeader;
     }
+    // Byethost 门禁放行固定走 "?i=1"（解锁 cookie 后需带该参数重试原请求才生效）。
+    // 带 cookie 的请求一律附加；非 Byethost 后端会忽略多余 query。
+    const gateNav = (cookieHeader ? ((url.search ? '&' : '?') + 'i=1') : '');
     const reqOpts = {
       hostname: url.hostname,
-      path: url.pathname + url.search,
+      path: url.pathname + url.search + gateNav,
       method: httpMethod,
       headers,
     };
