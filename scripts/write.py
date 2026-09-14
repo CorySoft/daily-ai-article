@@ -58,12 +58,31 @@ def is_complete(text):
     has_sections = len(re.findall(r"^## ", text, re.MULTILINE)) >= 3
     return bool(ends_ok) and has_sections
 
+def _escape_html(text):
+    """Escape HTML metacharacters in model output before it enters the draft HTML."""
+    return (text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+                .replace("'", "&#39;"))
+
+
 def _inline_md(text):
-    """Convert inline markdown (bold, italic, code, links) to HTML."""
+    """Convert inline markdown (bold, italic, code, links) to HTML.
+    Model output is untrusted HTML, so escape first, then apply white-listed markdown.
+    """
+    text = _escape_html(text)
     text = re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#0F4C81;font-weight:bold;">\1</strong>', text)
     text = re.sub(r'\*(.+?)\*', r'<em style="color:#0F4C81;">\1</em>', text)
     text = re.sub(r'`(.+?)`', r'<code style="background:#F0F6FA;color:#0F4C81;padding:2px 6px;border-radius:4px;font-size:0.9em;">\1</code>', text)
-    text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:#0F4C81;text-decoration:underline;">\1</a>', text)
+
+    def _link(m):
+        label, url = m.group(1), m.group(2).strip()
+        if url.startswith(("http://", "https://", "#")):
+            return f'<a href="{url}" style="color:#0F4C81;text-decoration:underline;">{label}</a>'
+        return label
+
+    text = re.sub(r'\[(.+?)\]\((.+?)\)', _link, text)
     return text
 
 _HEADING_STYLE = {
@@ -94,7 +113,7 @@ def markdown_to_html(md):
                 code = "\n".join(code_lines)
                 html_lines.append(
                     f'<pre style="background:#F5F7FA;padding:12px;border-radius:6px;'
-                    f'overflow-x:auto;font-size:13px;line-height:1.6;">{code}</pre>'
+                    f'overflow-x:auto;font-size:13px;line-height:1.6;">{_escape_html(code)}</pre>'
                 )
             continue
         if in_code:
@@ -107,7 +126,7 @@ def markdown_to_html(md):
             alt = m.group(1).replace("配图描述：", "").strip()
             html_lines.append(
                 f'<figure style="margin:20px 0;text-align:center;">'
-                f'<img src="IMAGESLOT_PENDING" data-desc="{alt}" style="width:100%;border-radius:6px;margin:15px 0;display:block;"/>'
+                f'<img src="IMAGESLOT_PENDING" data-desc="{_escape_html(alt)}" style="width:100%;border-radius:6px;margin:15px 0;display:block;"/>'
                 f'</figure>'
             )
             continue
@@ -180,7 +199,7 @@ def markdown_to_html(md):
     if in_code:
         code = "\n".join(code_lines)
         html_lines.append(
-            f'<pre style="background:#F5F7FA;padding:12px;border-radius:6px;overflow-x:auto;">{code}</pre>'
+            f'<pre style="background:#F5F7FA;padding:12px;border-radius:6px;overflow-x:auto;">{_escape_html(code)}</pre>'
         )
     return "".join(html_lines)
 

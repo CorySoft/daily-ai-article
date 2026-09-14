@@ -60,7 +60,7 @@ def chat(messages, temperature=0.7, max_tokens=3000, retries=3):
 def _clean_content(text):
     """Strip thinking tags and extra whitespace from model output."""
     import re
-    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL)
     text = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL)
     return text.strip()
 
