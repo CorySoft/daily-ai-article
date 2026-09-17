@@ -70,5 +70,9 @@
   {
     "full_name": "0xjohnnydev/airlift",
     "date": "2026-09-16"
+  },
+  {
+    "full_name": "ctdal/cve-2026-41940-PoC",
+    "date": "2026-09-17"
   }
 ]
