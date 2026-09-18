@@ -74,5 +74,9 @@
   {
     "full_name": "ctdal/cve-2026-41940-PoC",
     "date": "2026-09-17"
+  },
+  {
+    "full_name": "TheoLeeCJ/openjev",
+    "date": "2026-09-18"
   }
 ]
