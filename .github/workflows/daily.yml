@@ -124,27 +124,4 @@ jobs:
           WX_APPSECRET: ${{ secrets.WX_APPSECRET }}
           WX_UNLOCK_PASSWORD: ${{ secrets.WX_UNLOCK_PASSWORD }}
 
-      - name: Notify on failure
-        if: failure()
-        run: |
-          python3 - <<'PY'
-          import json, os, urllib.request
-          webhook = os.environ.get("NOTIFY_WEBHOOK")
-          if not webhook:
-              print("NOTIFY_WEBHOOK not set, skipping failure notification")
-              raise SystemExit(0)
-          repo = os.environ.get("GITHUB_REPOSITORY", "")
-          run_id = os.environ.get("GITHUB_RUN_ID", "")
-          run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repo}/actions/runs/{run_id}"
-          payload = {
-              "text": f"❌ {repo} 流水线失败",
-              "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
-              "run": run_url,
-          }
-          req = urllib.request.Request(webhook, data=json.dumps(payload).encode("utf-8"),
-                                       headers={"Content-Type": "application/json"})
-          urllib.request.urlopen(req, timeout=10)
-          print("failure notification sent")
-          PY
-        env:
-          NOTIFY_WEBHOOK: ${{ secrets.NOTIFY_WEBHOOK }}
+      
