@@ -126,5 +126,9 @@
   {
     "full_name": "openai/mcp-extensions",
     "date": "2026-09-30"
+  },
+  {
+    "full_name": "fulldiagnose/antigravity-fixer",
+    "date": "2026-10-01"
   }
 ]
