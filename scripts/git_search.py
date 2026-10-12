@@ -103,6 +103,8 @@ def load_featured():
 def pick_repo(repos, featured):
     fresh = [r for r in repos if r["full_name"] not in featured]
     pool = fresh or repos
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
     scored = []
     for r in pool:
         stars = r["stars"]
@@ -111,6 +113,14 @@ def pick_repo(repos, featured):
         weight = min(max(stars, 1), 5000) ** 0.5
         if 80 <= stars <= 20000:
             weight *= 1.5
+        # Freshness boost: pushed within last 3 days -> up to +80%
+        try:
+            pushed = datetime.fromisoformat(r["pushed_at"].replace("Z", "+00:00"))
+            days = (now - pushed).total_seconds() / 86400
+            if days >= 0:
+                weight *= 1.0 + max(0.0, 0.8 * (1.0 - min(days, 7.0) / 7.0))
+        except Exception:
+            pass
         scored.append((weight, r))
     if not scored:
         scored = [(1.0, r) for r in pool]
