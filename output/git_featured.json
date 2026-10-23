@@ -218,5 +218,9 @@
   {
     "full_name": "renjiegod/dyt-ashare-cli",
     "date": "2026-10-22"
+  },
+  {
+    "full_name": "eness/php2shell-CVE-2026-109618-CVE-2026-109619-PoC",
+    "date": "2026-10-23"
   }
 ]
