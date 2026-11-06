@@ -7,6 +7,7 @@ from datetime import date
 import llm
 from util import slim_collected, word_count as wc
 from util import ACCEPT_WORD_MIN, ACCEPT_WORD_MAX, is_complete
+from util import recent_outputs, risk_verdict, style_issues
 
 WRITE_PROMPT = """你是资深公众号作者。根据选题策划，写一篇原创中文公众号文章。
 
@@ -22,17 +23,23 @@ WRITE_PROMPT = """你是资深公众号作者。根据选题策划，写一篇�
 - 事实/数据/产品名可保留，但须重组与解释
 - 引用关键数据/言论须标注来源（来源URL）
 - 无法确认的信息不得写成事实；素材多源冲突须在正文说明差异
+- 文中出现的来源 URL 必须就是【策划】里 source_url 那条事件本身（或其原始出处），
+  禁止用与本事件无关的链接凑数
 - 禁止写成“众所周知/泛泛而谈”的科普：必须围绕选题的新鲜切入点展开，每一章都要推进新信息或新分析，而不是复述常识
+- 填充语黑名单（全文合计 ≤2 次）：想象一下、值得注意的是、让我们、综上所述、不难发现、
+  可以看到、首先，/其次，/最后， 的三连式
 
 【结构与风格】
 - 结构：悬念导语 → 背景 → 核心章节(4~6) → 案例/数据/对比 → 读者影响 → 独立分析 → 有力结尾
 - 目标读者：普通大众、科技与 AI 从业者
 - 风格：专业、清晰、有观点
-- 篇幅：**全文严格控制在 2400~3200 字**（宁少勿多，超过 3400 字即判失败）
+- 篇幅：**全文严格控制在 2400~3200 字**（宁少勿多；低于 2200 字或超过 3400 字都判失败）
 - 提供增量价值：交叉分析/因果解释/影响分析/可执行建议/易忽略问题/有依据的趋势判断
 
 【排版要求】（重要，必须遵守）
-1. 每个核心章节必须用 `##` 小标题分段（小标题要具体、有吸引力，不要空泛）
+1. 每个核心章节必须用 `##` 小标题分段（小标题要具体、有吸引力，不要空泛；
+   禁用「结语」「总结」「展望」「思考」「引言」这类通用名，结尾也要有具体论断）
+   - 不要沿用最近几篇的小标题措辞，同一栏目连续出现同套结构即为不合格
 2. 正文多用排版标记：**加粗**关键观点、>引用数据或言论、- 列要点（每章至少一个列表或引用）
 3. 在合适的章节标注 2~3 张配图位置，格式：`![配图描述：一句话说明画面内容]`
     - 描述必须是可绘制的物体/场景/材质/光影，不要写截图、界面、仓库页、徽章、按钮、流程图、带字屏幕
@@ -208,17 +215,18 @@ def extract_image_slots(md):
     return slots
 
 
-def _extract_source_urls(collected):
-    """Extract up to 3 source URLs from collected data for citation."""
-    urls = []
-    for source in collected.get("sources", []):
-        for r in source.get("results", []):
-            url = r.get("url", "")
-            if url.startswith("http") and url not in urls:
-                urls.append(url)
-            if len(urls) >= 3:
-                return " ".join(urls)
-    return " ".join(urls)
+def _citation_urls(plan, collected):
+    """引用只认选题锚点：plan.source_url 已由 S2 按热度档位校验过，确实对应本文事件。
+
+    老逻辑是从 collected 里抓前 3 个 URL 拼成「参考来源」，与选题无关 —— 实测 10 月
+    以来 31% 的稿子因此挂着三个毫不相干的域名（讲 YC 掌门人烧 20 万美元，
+    末尾链的却是个光盘镜像工具仓库）。锚点缺失时宁可退回到素材里唯一一条，也不再散弹。
+    """
+    anchor = (plan.get("source_url") or "").strip()
+    if anchor.startswith("http"):
+        return anchor
+    urls = [r.get("url", "") for s in collected.get("sources", []) for r in s.get("results", [])]
+    return next((u for u in urls if u.startswith("http")), "")
 
 
 def main():
@@ -235,40 +243,65 @@ def main():
         collected=slim_collected(collected),
     )
 
+    recent_md, recent_titles = recent_outputs(days=5, kind="daily")
     max_attempts = 3
     article = None
     last_wc = 0
+    problems = []
     for attempt in range(max_attempts):
         prompt = base_prompt
         if attempt > 0:
-            prompt += f"\n\n【上次生成不合格，请修正】上次全文为 {last_wc} 字（含标题行）。必须把正文压缩到 2400~3200 字，删除冗余段落，保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位；正文中须内嵌至少一条来源 URL。"
+            if last_wc and last_wc < TARGET_WORD_MIN:
+                fix = (f"上次全文 {last_wc} 字，写薄了：请扩充到 2400~3200 字，"
+                       "补的是事实、数据与推演，不是把同一句话换着说；")
+            else:
+                fix = f"上次全文 {last_wc} 字，请删掉冗余段落、压回 2400~3200 字；"
+            prompt += ("\n\n【上次生成不合格，请修正】" + fix +
+                       "保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位；"
+                       "正文中须内嵌至少一条来源 URL。" +
+                       ("另外：" + "；".join(problems) if problems else ""))
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         # Ensure the article contains source URLs; inject from collected data if missing.
         # 必须在验收计数之前注入：否则 S3 量的是注入前、S7 复查的是注入后，
         # 接近上限的文章会被追加的来源行顶出 3400 而整条流水线误判失败。
         if not re.search(r"https?://", article):
-            urls = _extract_source_urls(collected)
+            urls = _citation_urls(plan, collected)
             if urls:
                 article += f"\n\n> 参考来源：{urls}"
-                print(f"Injected source URLs: {urls}")
+                print(f"Injected source URL: {urls}")
             else:
                 print("WARNING: no source URLs found in collected data", file=sys.stderr)
         last_wc = wc(article)
-        print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars")
-        if ACCEPT_WORD_MIN <= last_wc <= ACCEPT_WORD_MAX and is_complete(article):
+        problems = style_issues(article, recent_md, recent_titles)
+        print(f"write attempt {attempt+1}/{max_attempts}: {last_wc} chars"
+              + (f" | 排版问题: {'；'.join(problems)}" if problems else ""))
+        if ACCEPT_WORD_MIN <= last_wc <= ACCEPT_WORD_MAX and is_complete(article) and not problems:
             break
         if attempt < max_attempts - 1:
-            print(f"  word count {last_wc} out of range or truncated, retrying...", file=sys.stderr)
+            print("  字数越界/疑似截断/排版雷同，重试中...", file=sys.stderr)
 
-    # fail-fast: 3 次仍不达标则终止流水线，避免白烧 S4/S5 的生图 API
+    # fail-fast: 字数与截断是硬指标；排版雷同只告警，不值得让整条流水线红
     if not (ACCEPT_WORD_MIN <= last_wc <= ACCEPT_WORD_MAX and is_complete(article)):
         print(
             f"ERROR: 3 attempts, word count {last_wc} outside {ACCEPT_WORD_MIN}~{ACCEPT_WORD_MAX} or truncated, aborting",
             file=sys.stderr,
         )
         sys.exit(1)
+    if problems:
+        print(f"WARNING: 排版仍雷同，未再重试以免耽误发布: {'；'.join(problems)}", file=sys.stderr)
 
     title, body = split_title(article)
+
+    # 成稿后自检：日更线是"报道"口径，「攻击/漏洞利用」只告警，其余红线就地停，
+    # 免得白烧 S4/S5 的生图再在 S7 红一次
+    hard, soft = risk_verdict([plan.get("source_title", ""), plan.get("source_url", "")],
+                              [title], False)
+    if soft:
+        print(f"NOTE: 标题命中 {soft}（安全事件报道口径放行）")
+    if hard:
+        print(f"ERROR: 成稿命中内容安全红线 {hard}：{title}", file=sys.stderr)
+        sys.exit(1)
+
     with open(f"output/{date.today()}.md", "w", encoding="utf-8") as f:
         f.write(article)
 

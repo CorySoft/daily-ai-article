@@ -4,7 +4,7 @@ import re
 import sys
 from datetime import date
 
-from util import word_count, ACCEPT_WORD_MIN, ACCEPT_WORD_MAX
+from util import word_count, ACCEPT_WORD_MIN, ACCEPT_WORD_MAX, is_complete, risk_verdict
 
 
 def main():
@@ -38,8 +38,28 @@ def main():
     has_pending = "IMAGESLOT_PENDING" in content
     thumb_ok = bool(thumb) and "$IMG_COMMIT" not in thumb
 
+    # 内容安全：这是发进公众号草稿箱前的最后一道。
+    # 「推荐一个项目」与「报道一件事」的口径不同：日更写供应链木马、写 CVE 是正当选题，
+    # 但开源精选的标题里出现这些词，就说明我们准备让读者去用它们。
+    repo = plan.get("repo", {}) or {}
+    recommend = prefix.startswith("git")
+    risky, soft = risk_verdict(
+        [repo.get("full_name", ""), repo.get("description", ""),
+         " ".join(repo.get("topics", []) or []),
+         plan.get("source_title", ""), plan.get("source_url", "")],
+        [title, plan.get("topic", ""), plan.get("angle", ""), plan.get("core_view", "")],
+        recommend)
+    if soft:
+        print(f"NOTE: 编辑字段命中 {soft}（安全事件报道，非推荐对象），放行但记录")
+    if risky:
+        print(f"ERROR: 命中内容安全红线 {risky}（title={title!r} repo={repo.get('full_name') or '-'}）",
+              file=sys.stderr)
+        print("       确属误伤时请人工核对该稿后直接用 client 发布，不要放宽本门槛。", file=sys.stderr)
+        sys.exit(1)
+
     checks = [
         (f"字数 {ACCEPT_WORD_MIN}~{ACCEPT_WORD_MAX}", ACCEPT_WORD_MIN <= wc <= ACCEPT_WORD_MAX),
+        ("全文未被截断", is_complete(md)),
         ("有标题", bool(title)),
         ("章节 >= 3", len(sections) >= 3),
         ("正文含来源 URL", has_source),
@@ -66,6 +86,8 @@ def main():
         "word_count": wc,
         "sections": sections,
         "core_view": plan.get("core_view"),
+        "risk_flags": risky,
+        "risk_notes": soft,
         "checks": {name: ok for name, ok in checks},
         "all_pass": all(ok for _, ok in checks),
     }

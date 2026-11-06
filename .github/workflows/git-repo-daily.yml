@@ -32,6 +32,11 @@ jobs:
           pip install -r requirements.txt
           sudo timeout 120 apt-get update && sudo timeout 60 apt-get install -y fonts-noto-cjk || echo "WARNING: CJK font install skipped (non-blocking, only needed for PIL fallback)"
 
+      - name: Unit tests (offline gates)
+        # 与 daily.yml 同一套 util/write 门槛，必须先于 S1 跑：
+        # 拦住空壳仓库、风险仓库、截断稿，且完全不碰外部 API
+        run: python -m unittest discover -s scripts -t scripts
+
       - uses: actions/setup-node@v5
         with:
           node-version: "20"

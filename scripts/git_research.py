@@ -102,6 +102,8 @@ def main():
     # Enrich plan with repo metadata
     plan["repo"] = {
         "full_name": repo["full_name"],
+        "description": repo.get("description", ""),
+        "topics": repo.get("topics", []),
         "url": repo["url"],
         "stars": repo["stars"],
         "forks": repo["forks"],

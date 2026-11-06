@@ -2,7 +2,7 @@ import json
 import sys
 
 import llm
-from util import slim_collected
+from util import slim_collected, risk_verdict
 
 PLAN_PROMPT = """你是公众号主编。基于以下当日达标热点素材，策划一封「有热度、有前沿感」的科技主题文章。
 
@@ -105,6 +105,13 @@ def _validate(plan, urls):
         problems.append("topic 缺失")
     if not _match(plan.get("source_url"), urls):
         problems.append(f"source_url 不在达标素材中: {(plan.get('source_url') or '')[:60]}")
+    # 素材里混着 GitHub Trending，外挂/涉黄仓库也可能爬上热榜；在写稿之前就换题，
+    # 比等 S7 拦下省一整条流水线的钱（安全新闻类的「攻击/漏洞利用」不在硬拦内）
+    hard, _ = risk_verdict([plan.get("source_title", ""), plan.get("source_url", "")],
+                           [plan.get("topic", ""), plan.get("angle", ""), plan.get("core_view", "")],
+                           False)
+    if hard:
+        problems.append(f"选题命中内容安全红线 {hard}，换一个不涉黄、不推荐外挂/破解/薅羊毛工具的题")
     return (not problems), problems
 
 
@@ -132,10 +139,11 @@ def main():
     ok, problems = _validate(plan, urls)
     if not ok:
         print(f"  选题未过硬门槛 {problems}，强制重试...", file=sys.stderr)
-        plan = llm.chat_json([{"role": "user", "content": prompt}], temperature=0.3, max_tokens=8192)
+        retry = prompt + "\n\n【上一版选题不合格】" + "；".join(problems) + "。请换一条仍然达标的素材重做。"
+        plan = llm.chat_json([{"role": "user", "content": retry}], temperature=0.3, max_tokens=8192)
         ok, problems = _validate(plan, urls)
         if not ok:
-            print(f"ERROR: plan 两次均未达到热度门槛: {problems}", file=sys.stderr)
+            print(f"ERROR: plan 两次均未达到门槛: {problems}", file=sys.stderr)
             sys.exit(1)
 
     with open("output/plan.json", "w", encoding="utf-8") as f:
