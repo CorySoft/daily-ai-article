@@ -241,7 +241,7 @@ def main():
     for attempt in range(max_attempts):
         prompt = base_prompt
         if attempt > 0:
-            prompt += f"\n\n【上次生成不合格，请修正】上次全文为 {last_wc} 字（含标题行）。必须把正文压缩到 2400~3100 字，删除冗余段落，保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位；正文中须内嵌至少一条来源 URL。"
+            prompt += f"\n\n【上次生成不合格，请修正】上次全文为 {last_wc} 字（含标题行）。必须把正文压缩到 2400~3200 字，删除冗余段落，保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位；正文中须内嵌至少一条来源 URL。"
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         # Ensure the article contains source URLs; inject from collected data if missing.
         # 必须在验收计数之前注入：否则 S3 量的是注入前、S7 复查的是注入后，
