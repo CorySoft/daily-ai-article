@@ -47,7 +47,8 @@ def slim_collected(collected, max_chars=8000, max_items=6, excerpt_len=400):
                 "description": (item.get("description") or "")[:240],
             }
             # 时效/热度信号：让主编能按新鲜度选选题
-            for key in ("pub_date", "age_hours", "recency", "hotness", "source", "language"):
+            for key in ("pub_date", "age_hours", "recency", "hotness", "source", "language",
+                        "trending_rank", "stars", "tier"):
                 if item.get(key):
                     entry[key] = item.get(key)
             ft = item.get("full_text") or ""

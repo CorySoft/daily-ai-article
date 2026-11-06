@@ -146,7 +146,7 @@ def free_github_trending(count=10):
         if HAS_BS4:
             soup = BeautifulSoup(html, "html.parser")
             articles = soup.select("article.Box-row")[:count]
-            for a in articles:
+            for rank, a in enumerate(articles, 1):
                 h = a.select_one("h2 a")
                 if not h:
                     continue
@@ -156,13 +156,20 @@ def free_github_trending(count=10):
                 stars_el = a.select_one("a[href$='/stargazers']")
                 desc = desc_el.get_text(strip=True) if desc_el else ""
                 stars = re.search(r"([\d,]+)", stars_el.get_text(strip=True)) if stars_el else None
+                star_count = int(stars.group(1).replace(",", "")) if stars else 0
+                today_el = a.select_one("span.d-inline-block.float-sm-right")
+                today = re.search(r"([\d,]+)", today_el.get_text(strip=True)) if today_el else None
+                today_count = int(today.group(1).replace(",", "")) if today else 0
                 results.append({
-                    "title": f"{name} 在 GitHub 上今日热度上升",
+                    "title": f"{name} 在 GitHub 上今日热度上升（Trending 第{rank}名）",
                     "url": f"https://github.com/{name}",
                     "description": (desc or f"{name} 今日登上 GitHub Trending"),
                     "source": "GitHub Trending",
                     "language": lang_el.get_text(strip=True) if lang_el else "",
                     "github_full_name": name,
+                    "trending_rank": rank,
+                    "stars": star_count,
+                    "hotness": today_count or star_count,
                     "stars_text": stars.group(1) if stars else "",
                 })
     except Exception as e:
