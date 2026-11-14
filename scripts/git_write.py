@@ -10,8 +10,9 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(__file__))
 import llm
 from util import word_count as wc
-from util import ACCEPT_WORD_MIN, ACCEPT_WORD_MAX, TARGET_WORD_MIN, is_complete
+from util import ACCEPT_WORD_MIN, ACCEPT_WORD_MAX, is_complete
 from util import recent_outputs, risk_flags, risk_verdict, style_issues
+from util import retry_hint
 from write import markdown_to_html, extract_image_slots
 
 FEATURED_PATH = "output/git_featured.json"
@@ -123,10 +124,9 @@ def main():
     for attempt in range(max_attempts):
         prompt = base_prompt
         if attempt > 0:
-            verb = "扩充" if last_wc < TARGET_WORD_MIN else "压缩"
-            prompt += (f"\n\n【上次生成不合格】上次全文 {last_wc} 字，请{verb}到 2400~3200 字，"
-                       "保留小标题和排版标记。" +
-                       ("另外：" + "；".join(problems) if problems else ""))
+            prompt += ("\n\n【上次生成不合格】" + retry_hint(
+                last_wc, "保留小标题和排版标记。") +
+                ("另外：" + "；".join(problems) if problems else ""))
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         last_wc = wc(article)
         problems = style_issues(article, recent_md, recent_titles)

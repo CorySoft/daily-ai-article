@@ -11,7 +11,7 @@
 ### 日更（`daily.yml`，每天 00:00 UTC / 08:00 北京时间）
 
 ```
-S0 unittest (scripts/)     纯离线门槛测试，先于任何外部调用，不烧 API
+S0 pyflakes + unittest   静态查未定义名字 + 纯离线门槛测试，先于任何外部调用，不烧 API
 S1 search.py              Brave + Hacker News + TechCrunch + ArXiv + GitHub Trending，精读正文 → output/collected.json
 S2 plan.py                按热度分档过滤 + LLM 选题策划 → output/plan.json
 S3 write.py               原创撰写 2200~3400 字（提示词要 2400~3200）→ output/YYYY-MM-DD.md + article.json
@@ -25,7 +25,7 @@ S8 wechat-publish.js      存微信草稿箱
 ### 开源精选（`git-repo-daily.yml`，每天 01:00 UTC / 09:00 北京时间）
 
 ```
-S0 unittest (scripts/)             同一条离线测试
+S0 pyflakes + unittest             同一套静态检查 + 离线测试
 S1 git_search.py                   搜 GitHub → 质量/风险硬门槛（`gate()`）→ 跳过已写过仓库 → output/git_collected.json
 S2 git_research.py               README + 目录 + LLM 分析 → output/git_plan.json
 S3 git_write.py                  开源精选正文 → output/git_YYYY-MM-DD.md + git_article.json
@@ -158,10 +158,14 @@ AI Pro 两年免费脚本的攻防逻辑》推荐的是 `worldonlyu/Google_AI_Pr
 ### 跑测试
 
 ```
-python -m unittest discover -s scripts -t scripts     # 51 项，纯离线，不碰任何外部 API
+python -m pyflakes scripts/*.py                        # 静态查未定义名字/未用导入，不碰任何 API
+python -m unittest discover -s scripts -t scripts     # 65 项，纯离线，不碰任何外部 API
 ```
 
-两条 workflow 都在 S1 之前加了 `Unit tests (offline gates)` 步骤。加这一步的直接理由：
+两条 workflow 都在 S1 之前加了 `Lint (static checks)` 与 `Unit tests (offline gates)` 两步。
+加 lint 的直接理由：`2fd096a` 让 `write.py` 的重试分支引用了没 import 的 `TARGET_WORD_MIN`，
+而重试只在字数不合格时执行 —— 当天第一篇就合格，61 项单测全绿，线上 08:00 的 S3 照样 NameError。
+加测试步骤的直接理由：
 `f5db70c` 把「参考来源」注入挪到验收之前，而 `is_complete` 当时不认引用尾巴，
 把 27/30 篇判成"未完稿" —— 测试套件早就写好了，CI 一次都没跑过，所以它是静悄悄上线的。
 

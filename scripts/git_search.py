@@ -208,7 +208,7 @@ def main():
         json.dump(output, f, ensure_ascii=False, indent=2)
 
     print(f"selected: {chosen['full_name']} ({chosen['stars']} stars) - {chosen['description'][:60]}")
-    print(f"output: output/git_collected.json")
+    print("output: output/git_collected.json")
 
 if __name__ == "__main__":
     main()

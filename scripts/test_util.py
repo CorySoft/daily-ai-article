@@ -1,11 +1,13 @@
 import json
 import os
+import re
 import tempfile
 import unittest
 
 import llm
 from util import slim_collected, word_count, is_complete
 from util import ACCEPT_WORD_MIN, ACCEPT_WORD_MAX, TARGET_WORD_MIN, TARGET_WORD_MAX
+from util import retry_hint
 from util import boilerplate_count, recent_outputs, risk_flags, risk_verdict, style_issues
 import git_write
 import plan
@@ -266,6 +268,56 @@ class ThresholdTest(unittest.TestCase):
     def test_target_sits_inside_accept(self):
         self.assertLessEqual(ACCEPT_WORD_MIN, TARGET_WORD_MIN)
         self.assertGreaterEqual(ACCEPT_WORD_MAX, TARGET_WORD_MAX)
+
+
+class RetryHintTest(unittest.TestCase):
+    """重试提示：写薄了要扩充、写超了要压回。2026-11-14 日更 S3 崩在 write.py
+    引用了没导入的 TARGET_WORD_MIN，正是这条分支。"""
+
+    def test_thin_run_is_told_to_expand(self):
+        hint = retry_hint(1900)
+        self.assertIn("扩充", hint)
+        self.assertIn(f"{TARGET_WORD_MIN}~{TARGET_WORD_MAX} 字", hint)
+
+    def test_long_run_is_told_to_compress(self):
+        hint = retry_hint(3800)
+        self.assertIn("压回", hint)
+        self.assertNotIn("扩充", hint)
+
+    def test_tail_is_appended(self):
+        self.assertTrue(retry_hint(1900, "保留小标题和排版标记。").endswith("保留小标题和排版标记。"))
+
+
+class ModuleConstantImportTest(unittest.TestCase):
+    """脚本正文用到的 util 常量必须在文件头 import 过。
+
+    NameError 只在重试分支触发，跑一次好稿子看不出来；这里静态查一遍，
+    免得再让线上流水线替我们发现。
+    """
+
+    NAMES = ("ACCEPT_WORD_MIN", "ACCEPT_WORD_MAX", "TARGET_WORD_MIN", "TARGET_WORD_MAX",
+             "MAX_BOILERPLATE", "MAX_SECTION_OVERLAP")
+
+    def test_constants_used_in_bodies_are_imported(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        checked = 0
+        for name in ("write.py", "git_write.py", "plan.py", "report.py", "git_research.py", "util.py"):
+            with open(os.path.join(here, name), encoding="utf-8") as f:
+                lines = f.read().splitlines()
+            imported, body = set(), []
+            for line in lines:
+                if re.match(r"\s*(from|import)\s+\S", line):
+                    imported.update(re.findall(r"\w+", line.partition("import")[2]))
+                elif re.match(r"[A-Z_]+\s*=", line):
+                    imported.add(line.partition("=")[0].strip())  # util.py 自己定义常量
+                else:
+                    body.append(line)
+            body = "\n".join(body)
+            for const in self.NAMES:
+                if re.search(rf"\b{const}\b", body):
+                    checked += 1
+                    self.assertIn(const, imported, f"{name} 用了 {const} 却没 import")
+        self.assertGreaterEqual(checked, 6, "扫描没覆盖到常量，检查本测试的正则")
 
 
 class StyleIssuesTest(unittest.TestCase):

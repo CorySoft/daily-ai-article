@@ -8,6 +8,7 @@ import llm
 from util import slim_collected, word_count as wc
 from util import ACCEPT_WORD_MIN, ACCEPT_WORD_MAX, is_complete
 from util import recent_outputs, risk_verdict, style_issues
+from util import retry_hint
 
 WRITE_PROMPT = """你是资深公众号作者。根据选题策划，写一篇原创中文公众号文章。
 
@@ -251,15 +252,11 @@ def main():
     for attempt in range(max_attempts):
         prompt = base_prompt
         if attempt > 0:
-            if last_wc and last_wc < TARGET_WORD_MIN:
-                fix = (f"上次全文 {last_wc} 字，写薄了：请扩充到 2400~3200 字，"
-                       "补的是事实、数据与推演，不是把同一句话换着说；")
-            else:
-                fix = f"上次全文 {last_wc} 字，请删掉冗余段落、压回 2400~3200 字；"
-            prompt += ("\n\n【上次生成不合格，请修正】" + fix +
-                       "保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位；"
-                       "正文中须内嵌至少一条来源 URL。" +
-                       ("另外：" + "；".join(problems) if problems else ""))
+            prompt += ("\n\n【上次生成不合格，请修正】" + retry_hint(
+                last_wc,
+                "保留所有 ## 小标题、加粗、列表、引用和 2~3 个配图位；"
+                "正文中须内嵌至少一条来源 URL。") +
+                ("另外：" + "；".join(problems) if problems else ""))
         article = llm.chat([{"role": "user", "content": prompt}], temperature=0.8, max_tokens=8192).strip()
         # Ensure the article contains source URLs; inject from collected data if missing.
         # 必须在验收计数之前注入：否则 S3 量的是注入前、S7 复查的是注入后，

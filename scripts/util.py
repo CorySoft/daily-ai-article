@@ -131,6 +131,21 @@ def boilerplate_count(md):
     return sum(md.count(p) for p in BOILERPLATE)
 
 
+def retry_hint(last_wc, tail=""):
+    """重试时拼在 prompt 后面的字数修正说明：写薄了要扩充，写超了要压缩。
+
+    放在 util 是因为两条流水线都要用，而 2026-11-14 日更 S3 正是崩在这句话的
+    分支条件上（write.py 引用了没 import 的 TARGET_WORD_MIN）—— 逻辑挪到这里，
+    常量就在旁边，单测也够得着。
+    """
+    if last_wc and last_wc < TARGET_WORD_MIN:
+        head = (f"上次全文 {last_wc} 字，写薄了：请扩充到 {TARGET_WORD_MIN}~{TARGET_WORD_MAX} 字，"
+                "补的是事实、数据与推演，不是把同一句话换着说；")
+    else:
+        head = f"上次全文 {last_wc} 字，请删掉冗余段落、压回 {TARGET_WORD_MIN}~{TARGET_WORD_MAX} 字；"
+    return head + tail
+
+
 def style_issues(md, recent_articles=(), recent_titles=()):
     """千篇一律的机器可判部分：套话密度、小节标题雷同、标题句式雷同。
 

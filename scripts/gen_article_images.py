@@ -16,7 +16,7 @@ from io import BytesIO
 from PIL import Image
 
 from gen_cover import render_concept, agnes_generate
-from image_style import article_prompt, fit_crop, sanitize_scene, visual_motif
+from image_style import article_prompt, fit_crop, visual_motif
 
 IMG_W, IMG_H = 800, 450
 

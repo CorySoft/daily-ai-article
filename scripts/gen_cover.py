@@ -187,7 +187,6 @@ def agnes_generate(prompt, api_key, size="1024x434", timeout=300, retries=2):
             "User-Agent": "Mozilla/5.0 DailyAI/1.0",
         },
     )
-    last_err = None
     for attempt in range(retries):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -205,7 +204,6 @@ def agnes_generate(prompt, api_key, size="1024x434", timeout=300, retries=2):
                     return r.read()
             raise ValueError(f"Agnes API response has neither url nor b64_json: {item}")
         except Exception as e:
-            last_err = e
             if attempt < retries - 1:
                 time.sleep(15 * (attempt + 1))
             print(f"  cover attempt {attempt+1}/{retries} failed: {e}", file=sys.stderr)
