@@ -298,5 +298,9 @@
   {
     "full_name": "rust-lang/rust",
     "date": "2026-11-13"
+  },
+  {
+    "full_name": "openai/codex",
+    "date": "2026-11-14"
   }
 ]
