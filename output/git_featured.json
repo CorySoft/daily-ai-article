@@ -302,5 +302,9 @@
   {
     "full_name": "openai/codex",
     "date": "2026-11-14"
+  },
+  {
+    "full_name": "NousResearch/hermes-agent",
+    "date": "2026-11-15"
   }
 ]
