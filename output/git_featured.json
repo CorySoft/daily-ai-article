@@ -326,5 +326,9 @@
   {
     "full_name": "openclaw/openclaw",
     "date": "2026-11-20"
+  },
+  {
+    "full_name": "kubernetes/kubernetes",
+    "date": "2026-11-21"
   }
 ]
