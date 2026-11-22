@@ -312,6 +312,9 @@ def main():
         "author": os.environ.get("ARTICLE_AUTHOR", "CorySoft"),
         "digest": os.environ.get("ARTICLE_DIGEST", ""),
         "content": markdown_to_html(body),
+        # 发布即开留言、不限制仅粉丝（原创声明与合集分组无公开 API，仍需人工）
+        "need_open_comment": 1,
+        "only_fans_can_comment": 0,
     }
     if args.thumb_url:
         articles["thumb_url"] = args.thumb_url

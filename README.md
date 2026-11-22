@@ -20,6 +20,7 @@ S5 gen_article_images.py  文内配图 → output/images/
 S6 fill_article.py        写入 jsDelivr CDN URL + thumb_url
 S7 report.py              字数/章节/出处/配图/封面/截断/内容安全验收
 S8 wechat-publish.js      存微信草稿箱
+S9 Draft checklist        运行摘要列出待人工项（原创声明 / 合集分组）
 ```
 
 ### 开源精选（`git-repo-daily.yml`，每天 01:00 UTC / 09:00 北京时间）
@@ -34,7 +35,12 @@ S5 gen_article_images.py --prefix git_  → output/git_images/
 S6 fill_article.py --prefix git_
 S7 report.py --prefix git_
 S8 wechat-publish.js --file output/git_article.json
+S9 Draft checklist                   运行摘要列出待人工项（原创声明 / 合集「每日开源」）
 ```
+
+两条线生成的 `article.json` / `git_article.json` 都显式带 `need_open_comment: 1`、`only_fans_can_comment: 0`，
+草稿存进去就是**留言开启、不限制仅粉丝**。**原创声明与合集（每日AI / 每日开源）没有公开 API**，
+仍需在公众号后台手工点，S9 只在 GitHub 运行摘要里提示当天该入哪个合集。
 
 两条线都是先提交仓库、再发草稿，发布失败可按 git 状态重发。
 

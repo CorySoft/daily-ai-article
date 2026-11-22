@@ -135,4 +135,32 @@ jobs:
           WX_APPSECRET: ${{ secrets.WX_APPSECRET }}
           WX_UNLOCK_PASSWORD: ${{ secrets.WX_UNLOCK_PASSWORD }}
 
+      - name: Draft checklist (manual steps)
+        if: hashFiles('output/git_article.json') != ''
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          with open('output/git_article.json', encoding='utf-8') as f:
+              article = json.load(f)['articles'][0]
+
+          title = article.get('title', '')
+          comment = article.get('need_open_comment', '未设置')
+          fans_only = article.get('only_fans_can_comment', '未设置')
+          lines = [
+              '## 草稿箱待办',
+              '',
+              f'- 标题：{title}',
+              f'- 已自动：留言开启（need_open_comment={comment}，仅粉丝可留言={fans_only}）',
+              '- 待人工：点「原创声明」、加入合集 **每日开源**',
+          ]
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_path:
+              with open(summary_path, 'a', encoding='utf-8') as f:
+                  f.write('\n'.join(lines) + '\n')
+          else:
+              print('\n'.join(lines))
+          PY
+
       
