@@ -81,6 +81,8 @@ def cover_prompt(topic, angle="", language="", kind="daily"):
     subject = (
         "WeChat banner for an open-source project feature"
         if kind == "git"
+        else "WeChat banner for a column about official free software tiers"
+        if kind == "free"
         else "WeChat banner for a daily technology essay"
     )
     lang = f"Material hint from {language}: color and texture only. " if language else ""

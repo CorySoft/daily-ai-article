@@ -176,9 +176,11 @@ def style_issues(md, recent_articles=(), recent_titles=()):
 def recent_outputs(days=5, kind="daily"):
     """读最近几天的产物 md，供 style_issues 比对（workflow 里 checkout 带全历史）。
 
-    kind="daily" 对应 output/2026-11-06.md，kind="git" 对应 output/git_2026-11-05.md。
+    kind="daily" 对应 output/2026-11-06.md，kind="git" 对应 output/git_2026-11-05.md，
+    kind="free" 对应 output/free_2026-11-05.md（第三条线独立比对，不与日更混基调）。
     """
-    files = sorted(glob.glob("output/git_*.md" if kind == "git" else "output/2*.md"))[:-1]
+    pattern = {"git": "output/git_*.md", "free": "output/free_*.md"}.get(kind, "output/2*.md")
+    files = sorted(glob.glob(pattern))[:-1]
     texts, titles = [], []
     for f in files[-days:]:
         try:

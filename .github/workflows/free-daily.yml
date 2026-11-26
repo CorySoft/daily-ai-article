@@ -1,0 +1,164 @@
+name: Daily Free Tier Article
+
+on:
+  schedule:
+    # 第三条线排在开源精选之后；非整点分钟避开 GitHub 调度器整点拥堵
+    - cron: "53 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # 与前两条共用并发组：三条线串行排队，互不取消，避免同时改 output/ 与 git push
+  group: article-pipeline
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          sudo timeout 120 apt-get update && sudo timeout 60 apt-get install -y fonts-noto-cjk || echo "WARNING: CJK font install skipped (non-blocking, only needed for PIL fallback)"
+
+      - name: Lint (static checks)
+        # 三条线共用 scripts/：任一条的未定义名字都会在这里先炸，不烧 API
+        run: python -m pyflakes scripts/*.py
+
+      - name: Unit tests (offline gates)
+        # 含 free 线自己的离线门槛测试：官方域名/灰产词/额度锚定，全部不碰外部 API
+        run: python -m unittest discover -s scripts -t scripts
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+
+      - name: S1 Collect official free tiers
+        run: python scripts/free_search.py
+        env:
+          SEARCH_API_KEY: ${{ secrets.SEARCH_API_KEY }}
+          FREE_SEARCH_TOPICS: ${{ vars.FREE_SEARCH_TOPICS }}
+          SEARCH_TOPICS: ${{ vars.SEARCH_TOPICS }}
+
+      - name: S2 Plan
+        run: python scripts/free_plan.py
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+
+      - name: S3 Write Article
+        run: python scripts/free_write.py
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          ARTICLE_AUTHOR: ${{ vars.ARTICLE_AUTHOR }}
+          ARTICLE_DIGEST: ${{ vars.ARTICLE_DIGEST }}
+
+      - name: S4 Generate cover
+        run: python scripts/free_cover.py
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+
+      - name: S5 Generate article images
+        run: python scripts/gen_article_images.py --prefix free_
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+
+      - name: Commit images for CDN
+        run: |
+          git config user.name "daily-bot"
+          git config user.email "daily-bot@users.noreply.github.com"
+          git add -f output/free_cover.jpg output/free_images/
+          git diff --cached --quiet && echo "no image changes" || git commit -m "free-tier images $(date +%F)"
+          STASHED=0
+          if [ -n "$(git status --porcelain)" ]; then git stash push -u -m "pipeline-wip"; STASHED=1; fi
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push
+          echo "IMG_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          if [ "$STASHED" = 1 ]; then git stash pop; fi
+
+      - name: S6 Fill image URLs + thumb
+        run: |
+          CDN_HOST="${{ vars.CDN_HOST || 'cdn.jsdelivr.net' }}"
+          export COVER_URL="https://${CDN_HOST}/gh/${{ github.repository }}@${IMG_COMMIT}/output/free_cover.jpg"
+          python -c "
+          import json, os
+          with open('output/free_article.json') as f: d = json.load(f)
+          d['articles'][0]['thumb_url'] = os.environ['COVER_URL']
+          d['articles'][0]['show_cover_pic'] = 1
+          with open('output/free_article.json','w') as f: json.dump(d, f, ensure_ascii=False, indent=2)
+          "
+          export CDN_BASE_URL="https://${CDN_HOST}/gh/${{ github.repository }}@${IMG_COMMIT}/"
+          python scripts/fill_article.py --prefix free_
+
+      - name: S7 Verify
+        run: python scripts/report.py --prefix free_
+
+      - name: Commit article
+        run: |
+          git config user.name "daily-bot"
+          git config user.email "daily-bot@users.noreply.github.com"
+          git add output/
+          git commit -m "free-tier article $(date +%F)" || echo "nothing to commit"
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push
+
+      - name: S8 Save draft to WeChat
+        if: hashFiles('output/free_article.json') != ''
+        run: |
+          node scripts/wechat-publish.js \
+            --server "$WX_SERVER" \
+            --secret "$WX_SHARED_SECRET" \
+            --appid "$WX_APPID" \
+            --appsecret "$WX_APPSECRET" \
+            --unlock-password "$WX_UNLOCK_PASSWORD" \
+            --file output/free_article.json
+        env:
+          WX_SERVER: ${{ secrets.WX_SERVER }}
+          WX_SHARED_SECRET: ${{ secrets.WX_SHARED_SECRET }}
+          WX_APPID: ${{ secrets.WX_APPID }}
+          WX_APPSECRET: ${{ secrets.WX_APPSECRET }}
+          WX_UNLOCK_PASSWORD: ${{ secrets.WX_UNLOCK_PASSWORD }}
+
+      - name: Draft checklist (manual steps)
+        if: hashFiles('output/free_article.json') != ''
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          with open('output/free_article.json', encoding='utf-8') as f:
+              article = json.load(f)['articles'][0]
+
+          title = article.get('title', '')
+          comment = article.get('need_open_comment', '未设置')
+          fans_only = article.get('only_fans_can_comment', '未设置')
+          lines = [
+              '## 草稿箱待办',
+              '',
+              f'- 标题：{title}',
+              f'- 已自动：留言开启（need_open_comment={comment}，仅粉丝可留言={fans_only}）',
+              '- 待人工：点「原创声明」、加入合集 **每日羊毛**',
+          ]
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_path:
+              with open(summary_path, 'a', encoding='utf-8') as f:
+                  f.write('\n'.join(lines) + '\n')
+          else:
+              print('\n'.join(lines))
+          PY

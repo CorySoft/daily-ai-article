@@ -2,11 +2,11 @@
 
 定时全网检索 → AI 策划 → AI 原创撰写 → 配图 → 自检验收 → 存入公众号草稿箱（不群发）。
 
-另有一条「开源精选」流水线，每天另写一篇 GitHub 项目推荐。
+另有一条「开源精选」流水线（GitHub 项目推荐）和一条「免费额度观察」流水线（厂商官方免费层/免费额度）。
 
 ## 流程
 
-两条流水线共用并发组 `article-pipeline`（排队执行，互不取消），产物目录隔离。
+三条流水线共用并发组 `article-pipeline`（排队执行，互不取消），产物用 `git_` / `free_` 前缀隔离。
 
 ### 日更（`daily.yml`，每天 00:23 UTC / 08:23 北京时间）
 
@@ -38,11 +38,31 @@ S8 wechat-publish.js --file output/git_article.json
 S9 Draft checklist                   运行摘要列出待人工项（原创声明 / 合集「每日开源」）
 ```
 
-两条线生成的 `article.json` / `git_article.json` 都显式带 `need_open_comment: 1`、`only_fans_can_comment: 0`，
+### 免费额度观察（`free-daily.yml`，每天 02:53 UTC / 10:53 北京时间）
+
+```
+S0 pyflakes + unittest             同一套静态检查 + 离线测试（含 free 线自己的门槛测试）
+S1 free_search.py                  Brave + HN Algolia 搜官方免费层 → 官方域名/风险/时效硬门槛 → output/free_collected.json
+S2 free_plan.py                    额度必须带数字 + 条款页必须厂商域名 + 红线无命中 → output/free_plan.json
+S3 free_write.py                   原创撰写 → output/free_YYYY-MM-DD.md + free_article.json
+S4 free_cover.py                   Agnes 封面 → output/free_cover.jpg
+S5 gen_article_images.py --prefix free_  → output/free_images/
+S6 fill_article.py --prefix free_
+S7 report.py --prefix free_         推荐口径验收（任一红线命中即拦）
+S8 wechat-publish.js --file output/free_article.json
+S9 Draft checklist                 运行摘要列出待人工项（原创声明 / 合集「每日羊毛」）
+```
+
+写过的额度（官方条款 URL）记在 `output/free_featured.json`，明天不会重复推同一家。
+S1 只认 `free_search.OFFICIAL_HOSTS` 里的厂商自有域名，转载/聚合/落地页一律不进候选；
+标题与正文统一用「免费额度 / 免费层 / 官方试用」，**不写「薅羊毛」「免费领会员」「接码」「养号」**——
+这些词在项目红线里属于灰产，`report.py` 对这条线按 `recommend=True` 处理（和开源精选一样，命中即硬拦）。
+
+三条线生成的 `article.json` / `git_article.json` / `free_article.json` 都显式带 `need_open_comment: 1`、`only_fans_can_comment: 0`，
 草稿存进去就是**留言开启、不限制仅粉丝**。**原创声明与合集（每日AI / 每日开源）没有公开 API**，
 仍需在公众号后台手工点，S9 只在 GitHub 运行摘要里提示当天该入哪个合集。
 
-两条线都是先提交仓库、再发草稿，发布失败可按 git 状态重发。
+三条线都是先提交仓库、再发草稿，发布失败可按 git 状态重发。
 
 ## 选题是怎么被卡住 hotness 的（S2 `plan.py`）
 
@@ -165,10 +185,10 @@ AI Pro 两年免费脚本的攻防逻辑》推荐的是 `worldonlyu/Google_AI_Pr
 
 ```
 python -m pyflakes scripts/*.py                        # 静态查未定义名字/未用导入，不碰任何 API
-python -m unittest discover -s scripts -t scripts     # 65 项，纯离线，不碰任何外部 API
+python -m unittest discover -s scripts -t scripts     # 83 项，纯离线，不碰任何外部 API
 ```
 
-两条 workflow 都在 S1 之前加了 `Lint (static checks)` 与 `Unit tests (offline gates)` 两步。
+全部三条 workflow 都在 S1 之前加了 `Lint (static checks)` 与 `Unit tests (offline gates)` 两步。
 加 lint 的直接理由：`2fd096a` 让 `write.py` 的重试分支引用了没 import 的 `TARGET_WORD_MIN`，
 而重试只在字数不合格时执行 —— 当天第一篇就合格，61 项单测全绿，线上 08:00 的 S3 照样 NameError。
 加测试步骤的直接理由：
@@ -206,6 +226,7 @@ python -m unittest discover -s scripts -t scripts     # 65 项，纯离线，不
 - `LLM_BASE_URL`：`https://apihub.agnes-ai.com/v1`（生产在 Actions Variables 注入）
 - `LLM_MODEL`：`agnes-3.0-flash`（生产在 Actions Variables 注入）
 - `SEARCH_TOPICS`：检索主题，用 `|` 分隔
+- `FREE_SEARCH_TOPICS`：免费额度线的补充检索词（可空；空则回退 `SEARCH_TOPICS`）
 - `ARTICLE_AUTHOR`：作者名
 - `ARTICLE_DIGEST`：摘要（可空）
 - `CDN_HOST`：workflow 里的**默认值**是 `cdn.jsdelivr.net`，但生产 Variable 实际设成了
@@ -216,8 +237,9 @@ GitHub 仓库搜索使用 Actions 自带的 `GITHUB_TOKEN`。
 
 ## 运行
 
-- 定时：**日更 00:23 UTC = 北京 08:23**，**开源精选 01:37 UTC = 北京 09:37**
-  （`daily.yml` / `git-repo-daily.yml` 的 `cron` 就是这两行，仓库里以 UTC 写）。
+- 定时：**日更 00:23 UTC = 北京 08:23**，**开源精选 01:37 UTC = 北京 09:37**，
+  **免费额度观察 02:53 UTC = 北京 10:53**（`daily.yml` / `git-repo-daily.yml` /
+  `free-daily.yml` 的 `cron` 就是这三行，仓库里以 UTC 写）。
   刻意用非整点分钟，避开 GitHub 调度器的整点拥堵（2026-11-26 把 `0 0` / `0 1` 改掉）。
   > ⚠️ 实测 GitHub 的 scheduled 触发**常晚数小时**：2026-11-19~26 记录晚 5~9.5 小时
   > （北京 13:00~18:00 才开跑），且 `created_at == run_started_at`，是调度器层延迟、
@@ -242,5 +264,7 @@ GitHub 仓库搜索使用 Actions 自带的 `GITHUB_TOKEN`。
 - 字数/套话/雷同阈值：`scripts/util.py` 的 `ACCEPT_WORD_*` / `TARGET_WORD_*` /
   `MAX_BOILERPLATE` / `MAX_SECTION_OVERLAP`
 - 策划要求：改 `scripts/plan.py` 的 `PLAN_PROMPT`
-- 已推荐仓库：`output/git_featured.json`
+- 已推荐仓库：`output/git_featured.json`；已写过的免费额度：`output/free_featured.json`
+- 免费额度搜什么：`scripts/free_search.py` 的 `CATEGORIES`（token / agent / cloud / vps / phone）
+  与 `OFFICIAL_HOSTS`（厂商白名单，**只该加合规官网，不该为凑数放宽**）；时效 `MAX_AGE_DAYS`
 - 配图风格：`scripts/image_style.py`（封面/文内提示词、禁文字、主题意象）

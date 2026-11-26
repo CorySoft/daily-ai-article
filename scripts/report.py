@@ -42,7 +42,9 @@ def main():
     # 「推荐一个项目」与「报道一件事」的口径不同：日更写供应链木马、写 CVE 是正当选题，
     # 但开源精选的标题里出现这些词，就说明我们准备让读者去用它们。
     repo = plan.get("repo", {}) or {}
-    recommend = prefix.startswith("git")
+    # 开源精选与免费额度都是「推荐读者去用」的栏目：任一红线命中都硬拦。
+    # 日更只是报道一件事，「攻击/漏洞利用」才降为告警。
+    recommend = prefix.startswith(("git", "free"))
     risky, soft = risk_verdict(
         [repo.get("full_name", ""), repo.get("description", ""),
          " ".join(repo.get("topics", []) or []),
