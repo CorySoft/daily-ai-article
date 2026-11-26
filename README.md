@@ -8,7 +8,7 @@
 
 两条流水线共用并发组 `article-pipeline`（排队执行，互不取消），产物目录隔离。
 
-### 日更（`daily.yml`，每天 00:00 UTC / 08:00 北京时间）
+### 日更（`daily.yml`，每天 00:23 UTC / 08:23 北京时间）
 
 ```
 S0 pyflakes + unittest   静态查未定义名字 + 纯离线门槛测试，先于任何外部调用，不烧 API
@@ -23,7 +23,7 @@ S8 wechat-publish.js      存微信草稿箱
 S9 Draft checklist        运行摘要列出待人工项（原创声明 / 合集分组）
 ```
 
-### 开源精选（`git-repo-daily.yml`，每天 01:00 UTC / 09:00 北京时间）
+### 开源精选（`git-repo-daily.yml`，每天 01:37 UTC / 09:37 北京时间）
 
 ```
 S0 pyflakes + unittest             同一套静态检查 + 离线测试
@@ -216,12 +216,14 @@ GitHub 仓库搜索使用 Actions 自带的 `GITHUB_TOKEN`。
 
 ## 运行
 
-- 定时：**日更 00:00 UTC = 北京 08:00**，**开源精选 01:00 UTC = 北京 09:00**
-  （`daily.yml` / `git-repo-daily.yml` 的 `cron` 就是这两行，仓库里以 UTC 写）
-  > ⚠️ 实测 GitHub 的 scheduled 触发**常年晚 4~5.5 小时**（近两周记录是 03:25~05:30 UTC，
-  > 即北京 11:25~13:30 才开跑）。这是 GitHub Actions 调度排队，不是本项目的问题；
-  > 但"几点出稿"要按实际开始时间算，别按 cron 字面值安排。旧文档写的"北京 16:00 / 17:00"
-  > 是 commit `5e22329` 之前那版 cron（`0 8 * * *` UTC）的遗留，改到 `0 0 * * *` 后 README 没跟上。
+- 定时：**日更 00:23 UTC = 北京 08:23**，**开源精选 01:37 UTC = 北京 09:37**
+  （`daily.yml` / `git-repo-daily.yml` 的 `cron` 就是这两行，仓库里以 UTC 写）。
+  刻意用非整点分钟，避开 GitHub 调度器的整点拥堵（2026-11-26 把 `0 0` / `0 1` 改掉）。
+  > ⚠️ 实测 GitHub 的 scheduled 触发**常晚数小时**：2026-11-19~26 记录晚 5~9.5 小时
+  > （北京 13:00~18:00 才开跑），且 `created_at == run_started_at`，是调度器层延迟、
+  > 不是 runner 排队、也不是本项目的问题。非整点只能降低撞车概率、不保证准时；
+  > "几点出稿"要按实际开始时间算，别按 cron 字面值安排。旧文档写的"北京 16:00 / 17:00"
+  > 是 commit `5e22329` 之前那版 cron（`0 8 * * *` UTC）的遗留。
 - Actions 页可手动 `Run workflow`
 - 本地：`pip install -r requirements.txt`，配齐环境变量后按脚本顺序执行
   **且必须从仓库根目录执行**（`python scripts/write.py`，不是 `cd scripts && python write.py`）：

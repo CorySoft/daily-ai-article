@@ -2,7 +2,8 @@ name: Daily AI Article
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    # 非整点分钟，避开 GitHub 调度器整点拥堵（原 "0 0" 实测晚 5~8.5h）
+    - cron: "23 0 * * *"
   workflow_dispatch:
 
 concurrency:
