@@ -1,15 +1,15 @@
 {
-  "date": "2026-11-25",
-  "title": "开源精选 | 告别“幻觉”与“付费墙”：Agent Reach 如何重塑 AI 的信息感知边界",
-  "word_count": 3241,
+  "date": "2026-11-27",
+  "title": "开源精选 | 抛弃DOM解析：Browser-Use 如何用 Python REPL 重塑 AI 网页自动化",
+  "word_count": 2448,
   "sections": [
-    "## 破解“数据孤岛”：为何 API 永远无法喂饱 Agent",
-    "## 机制拆解：CDP 自动化与 OpenCLI 的协同效应",
-    "## 上手成本与隐性依赖：不只是 pip install",
-    "## 边界划定：什么情况下别用 Agent Reach",
-    "## 横向对比：在 Scrape 生态中的取舍"
+    "## 从“视觉模仿”到“代码生成”的范式跃迁",
+    "## 核心抉择：为什么是持久化 REPL 而非固定脚本？",
+    "## 与 Playwright 及视觉 Agent 的本质差异",
+    "## 真实使用中的“坑”：不要高估模型的编程能力",
+    "## 适合谁，不适合谁"
   ],
-  "core_view": "零 API 成本解决 AI 智能体访问中文及视频平台痛点，构建结构化数据获取闭环",
+  "core_view": "MIT开源、12w+星标的顶级项目。LLM动态生成Python指令，通过Chrome DevTools协议执行，实现可复用的复杂网页自动化。",
   "risk_flags": [],
   "risk_notes": [],
   "checks": {
